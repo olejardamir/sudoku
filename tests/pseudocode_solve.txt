@@ -1,0 +1,1139 @@
+====================================================================
+SUDOKU SOLVER ENGINE (9×9)
+FINAL TYPESCRIPT-TRANATABLE PSEUDOCODE (SINGLE BLOCK)
+FIXED + TUNED TO “FIT-IN” WITH GENERATOR REQUIREMENTS:
+
+ADDED / FIXED (GENERATOR FIT):
+- Public runtime API expected by generator:
+  resetFromGivens(), loadGrid81(), setRandomSeed(), enableRandomMRVTieBreak(),
+  enableRandomValueChoice(), enableHeavyRules(), clearStats(), clearLimits(),
+  setNodeLimit(), setTimeoutMs(), solveStopAtOne(), solveStopAtTwo(),
+  countSolutions(stopAt=2), getSolution81(), getStats()
+- stopAtSolutions implemented in DFS (critical for generating solved grids from empty)
+- nodeLimit + timeout implemented with status returns (NODE_LIMIT / TIMEOUT)
+- deterministic PRNG (no Math.random) for reproducible generation
+- random value choice (domain bit selection) + random MRV tie-break (deterministic)
+
+KEPT / IMPROVED (SOLVER QUALITY):
+- Math.clz32 for bit index
+- >>>0 for unsigned masks
+- CELL_TO_UNITS precomputed
+- assignedCount for solved check
+- DIRTY_UNIT for hidden singles scheduling
+- Locked Candidates (pointing/claiming)
+- Hidden Pairs scheduled (“heavy”)
+====================================================================
+
+--------------------------------------------------------------------
+CONSTANTS / TYPES
+--------------------------------------------------------------------
+CONST CELLS = 81
+CONST WORDS = 3
+CONST UNITS = 27
+CONST DIGITS = 9
+
+CONST MAX_DEPTH = 81
+CONST MAX_TRAIL = 200000
+
+// Heavy propagation scheduling defaults (can be overridden via API)
+CONST DEFAULT_HEAVY_AT_ROOT_ONLY = FALSE
+CONST DEFAULT_HEAVY_DEPTH_LIMIT  = 1
+CONST DEFAULT_HEAVY_DIRTY_UNITS_ONLY = TRUE
+
+// 81 bits across 3 words; last word has only 17 valid bits (cells 64..80)
+CONST ALL_WORD_MASK0 = 0xFFFFFFFF
+CONST ALL_WORD_MASK1 = 0xFFFFFFFF
+CONST ALL_WORD_MASK2 = 0x0001FFFF
+
+CONST ALL_UNITS_DIRTY = 0x07FFFFFF    // 27 ones
+
+ENUM SolveStatus = { NO_SOLUTION, UNIQUE, MULTIPLE, NODE_LIMIT, TIMEOUT }
+ENUM Difficulty  = { EASY, MEDIUM, HARD, SAMURAI }
+
+TYPE U32 = number
+
+TYPE SolveStats = {
+  conflicts: number,
+  guessCount: number,
+  maxDepth: number,
+  nodes: number,
+  elapsedMs: number
+}
+
+TYPE SolveResult = {
+  status: SolveStatus,
+  solutionCount: number,        // how many solutions were found (up to stopAt)
+  solution81: Uint8Array|null,  // first solution (digits 1..9), else null
+  difficulty: Difficulty|null,  // filled when UNIQUE and when requested
+  stats: SolveStats
+}
+
+--------------------------------------------------------------------
+UNSIGNED + BIT HELPERS (TS/JS)
+--------------------------------------------------------------------
+FUNCTION u32(x: number): U32
+  return (x >>> 0)
+
+FUNCTION u32not(x: number): U32
+  return ((~x) >>> 0)
+
+FUNCTION lowbit32(x: number): U32
+  return u32(x & -x)
+
+FUNCTION bitIndexLow(singleBit: number): number
+  singleBit = u32(singleBit)
+  if singleBit == 0: return -1
+  return 31 - Math.clz32(singleBit)
+
+FUNCTION isSingle32(x: number): boolean
+  x = u32(x)
+  return (x != 0) AND (u32(x & (x - 1)) == 0)
+
+FUNCTION popcount32(x: number): number
+  x = u32(x)
+  c = 0
+  while x != 0:
+    x = u32(x & (x - 1))
+    c++
+  return c
+
+// 9-bit popcount LUT
+GLOBAL POPCOUNT_9BIT[512] : Uint8Array
+
+FUNCTION INIT_POPCOUNT_9BIT(): void
+  POPCOUNT_9BIT = new Uint8Array(512)
+  for m in 0..511:
+    x = m
+    c = 0
+    while x != 0:
+      x = x & (x - 1)
+      c++
+    POPCOUNT_9BIT[m] = c
+
+FUNCTION popcount9(mask9: number): number
+  return POPCOUNT_9BIT[mask9 & 0x1FF]
+
+--------------------------------------------------------------------
+CELL BIT HELPERS
+--------------------------------------------------------------------
+FUNCTION cellWord(cell: number): number
+  return (cell >>> 5)                 // 0..2
+
+FUNCTION cellBit(cell: number): U32
+  return ((1 << (cell & 31)) >>> 0)
+
+FUNCTION row(cell: number): number
+  return ((cell / 9) | 0)
+
+FUNCTION col(cell: number): number
+  return (cell % 9)
+
+--------------------------------------------------------------------
+DETERMINISTIC PRNG (xorshift32)
+- good enough for Sudoku randomization; reproducible
+--------------------------------------------------------------------
+FUNCTION xorshift32(state: U32): U32
+  x = state
+  x = u32(x ^ (x << 13))
+  x = u32(x ^ (x >>> 17))
+  x = u32(x ^ (x << 5))
+  return x
+
+--------------------------------------------------------------------
+STATIC PRECOMPUTATION
+- UNIT_MASK[u*3+w] : bitset of cells in each unit
+- PEER_MASK[cell*3+w] : bitset of peer cells for each cell
+- CELL_TO_UNITS[cell*3 + k] gives unit IDs (row, col, box)
+--------------------------------------------------------------------
+FUNCTION GENERATE_MASKS():
+  UNIT_MASK = new Uint32Array(UNITS * WORDS)
+  PEER_MASK = new Uint32Array(CELLS * WORDS)
+  CELL_TO_UNITS = new Uint8Array(CELLS * 3)
+
+  FUNCTION setBit(arr: Uint32Array, base: number, cell: number): void
+    w = cellWord(cell)
+    b = cellBit(cell)
+    arr[base + w] = u32(arr[base + w] | b)
+
+  // rows (u=0..8)
+  for r in 0..8:
+    base = r * 3
+    for c in 0..8:
+      setBit(UNIT_MASK, base, r*9 + c)
+
+  // cols (u=9..17)
+  for c in 0..8:
+    u = 9 + c
+    base = u * 3
+    for r in 0..8:
+      setBit(UNIT_MASK, base, r*9 + c)
+
+  // boxes (u=18..26)
+  for br in 0..2:
+    for bc in 0..2:
+      box = br*3 + bc
+      u = 18 + box
+      base = u * 3
+      r0 = br * 3
+      c0 = bc * 3
+      for dr in 0..2:
+        for dc in 0..2:
+          setBit(UNIT_MASK, base, (r0+dr)*9 + (c0+dc))
+
+  // CELL_TO_UNITS
+  for cell in 0..80:
+    r = row(cell)
+    c = col(cell)
+    b = (((r / 3) | 0) * 3) + ((c / 3) | 0)
+    CELL_TO_UNITS[cell*3 + 0] = r
+    CELL_TO_UNITS[cell*3 + 1] = 9 + c
+    CELL_TO_UNITS[cell*3 + 2] = 18 + b
+
+  // PEER_MASK
+  for cell in 0..80:
+    rU = CELL_TO_UNITS[cell*3 + 0]          // row unit id
+    cU = CELL_TO_UNITS[cell*3 + 1] - 9      // col index 0..8
+    bU = CELL_TO_UNITS[cell*3 + 2] - 18     // box index 0..8
+    base = cell * 3
+
+    // row peers
+    for c2 in 0..8:
+      if c2 == cU: continue
+      setBit(PEER_MASK, base, rU*9 + c2)
+
+    // col peers
+    for r2 in 0..8:
+      if r2 == rU: continue
+      setBit(PEER_MASK, base, r2*9 + cU)
+
+    // box peers
+    br = ((bU / 3) | 0)
+    bc = (bU % 3)
+    r0 = br * 3
+    c0 = bc * 3
+    for dr in 0..2:
+      for dc in 0..2:
+        p = (r0+dr)*9 + (c0+dc)
+        if p == cell: continue
+        setBit(PEER_MASK, base, p)
+
+  return { UNIT_MASK, PEER_MASK, CELL_TO_UNITS }
+
+--------------------------------------------------------------------
+SOLVER CLASS
+- CELL_MASK[cell] : 9-bit domain
+- DIGIT_PLANE[(d*3+w)|0] : bitset of cells where digit d is allowed
+- DIRTY (cells) : 3-word bitset for cell processing
+- DIRTY_UNIT : 27-bit bitset for unit processing
+- assignedCount : number of single cells (solved if ==81)
+--------------------------------------------------------------------
+CLASS SudokuSolver:
+
+  // ---- static masks (shared precomputation) ----
+  private readonly UNIT_MASK: Uint32Array
+  private readonly PEER_MASK: Uint32Array
+  private readonly CELL_TO_UNITS: Uint8Array
+
+  // ---- core state ----
+  private readonly CELL_MASK: Uint16Array          // 9-bit
+  private readonly DIGIT_PLANE: Uint32Array        // 9*3
+
+  private readonly DIRTY: Uint32Array              // 3 words
+  private readonly DIRTY_UNIT: Uint32Array         // length 1 (27-bit)
+
+  private assignedCount: number
+  private propChanged: boolean
+
+  // ---- activity heuristic (optional tie-break) ----
+  private readonly ACTIVITY: Float64Array
+  private ACTIVITY_INC: number
+  private readonly ACTIVITY_DECAY = 0.95
+  private readonly RESCALE_THRESHOLD = 1e150
+  private readonly RESCALE_FACTOR = 1e-100
+
+  // ---- trail ----
+  private readonly trailCell: Int16Array
+  private readonly trailMask: Uint16Array
+  private trailPtr: number
+
+  // ---- decision stack (iterative DFS) ----
+  private readonly decCell: Int16Array
+  private readonly decDomain: Uint16Array
+  private readonly decMark: Int32Array
+  private decPtr: number
+
+  // ---- solution capture (first solution only) ----
+  private readonly SOLUTION: Uint8Array            // digits 0..8
+  private solutionCount: number
+
+  // ---- stats ----
+  private conflicts: number
+  private maxDepth: number
+  private guessCount: number
+  private nodes: number
+
+  // ---- deterministic random ----
+  private rngState: U32
+
+  // ---- limits ----
+  private nodeLimit: number            // 0 => no limit
+  private timeoutMs: number            // 0 => no timeout
+  private startTimeMs: number
+
+  // ---- behavior toggles ----
+  private heavyEnabled: boolean
+  private heavyAtRootOnly: boolean
+  private heavyDepthLimit: number
+  private heavyDirtyUnitsOnly: boolean
+
+  private randomMRVTieBreak: boolean
+  private randomValueChoice: boolean
+
+  private selectSeed: number           // rotated scan seed (deterministic even without RNG)
+
+  // ---- hidden pairs scratch (no allocations in hot path) ----
+  private readonly hpCand0: Uint32Array
+  private readonly hpCand1: Uint32Array
+  private readonly hpCand2: Uint32Array
+  private readonly hpCnt:  Uint8Array
+
+  CONSTRUCTOR(masks):
+    UNIT_MASK = masks.UNIT_MASK
+    PEER_MASK = masks.PEER_MASK
+    CELL_TO_UNITS = masks.CELL_TO_UNITS
+
+    CELL_MASK = new Uint16Array(81)
+    DIGIT_PLANE = new Uint32Array(9*3)
+
+    DIRTY = new Uint32Array(3)
+    DIRTY_UNIT = new Uint32Array(1)
+
+    ACTIVITY = new Float64Array(81)
+    ACTIVITY_INC = 1.0
+
+    trailCell = new Int16Array(MAX_TRAIL)
+    trailMask = new Uint16Array(MAX_TRAIL)
+    trailPtr = 0
+
+    decCell = new Int16Array(MAX_DEPTH)
+    decDomain = new Uint16Array(MAX_DEPTH)
+    decMark = new Int32Array(MAX_DEPTH)
+    decPtr = 0
+
+    SOLUTION = new Uint8Array(81)
+    solutionCount = 0
+
+    conflicts = 0
+    maxDepth = 0
+    guessCount = 0
+    nodes = 0
+
+    rngState = u32(0x9E3779B9)  // default non-zero seed
+    nodeLimit = 0
+    timeoutMs = 0
+    startTimeMs = 0
+
+    heavyEnabled = TRUE
+    heavyAtRootOnly = DEFAULT_HEAVY_AT_ROOT_ONLY
+    heavyDepthLimit = DEFAULT_HEAVY_DEPTH_LIMIT
+    heavyDirtyUnitsOnly = DEFAULT_HEAVY_DIRTY_UNITS_ONLY
+
+    randomMRVTieBreak = FALSE
+    randomValueChoice = FALSE
+
+    selectSeed = 0
+    assignedCount = 0
+    propChanged = FALSE
+
+    hpCand0 = new Uint32Array(9)
+    hpCand1 = new Uint32Array(9)
+    hpCand2 = new Uint32Array(9)
+    hpCnt   = new Uint8Array(9)
+
+  ------------------------------------------------------------------
+  PUBLIC CONFIG API (generator-fit)
+  ------------------------------------------------------------------
+  public METHOD clearStats(): void
+    conflicts = 0
+    maxDepth = 0
+    guessCount = 0
+    nodes = 0
+    solutionCount = 0
+
+  public METHOD clearLimits(): void
+    nodeLimit = 0
+    timeoutMs = 0
+
+  public METHOD setNodeLimit(limit: number): void
+    nodeLimit = (limit > 0 ? limit : 0)
+
+  public METHOD setTimeoutMs(ms: number): void
+    timeoutMs = (ms > 0 ? ms : 0)
+
+  public METHOD setRandomSeed(seed: number): void
+    // force to u32; avoid zero state
+    s = u32(seed)
+    rngState = (s != 0 ? s : u32(0xA5A5A5A5))
+
+  public METHOD enableRandomMRVTieBreak(on: boolean): void
+    randomMRVTieBreak = on
+
+  public METHOD enableRandomValueChoice(on: boolean): void
+    randomValueChoice = on
+
+  public METHOD enableHeavyRules(on: boolean): void
+    heavyEnabled = on
+
+  // optional knobs if you want parity with earlier scheduling constants
+  public METHOD setHeavySchedule(atRootOnly: boolean, depthLimit: number, dirtyUnitsOnly: boolean): void
+    heavyAtRootOnly = atRootOnly
+    heavyDepthLimit = (depthLimit | 0)
+    heavyDirtyUnitsOnly = dirtyUnitsOnly
+
+  ------------------------------------------------------------------
+  PRNG helpers (deterministic)
+  ------------------------------------------------------------------
+  private METHOD rngNextU32(): U32
+    rngState = xorshift32(rngState)
+    return rngState
+
+  private METHOD rngNextInt(n: number): number
+    // 0..n-1
+    if n <= 1: return 0
+    return (rngNextU32() % n)
+
+  ------------------------------------------------------------------
+  LIMIT CHECKS
+  ------------------------------------------------------------------
+  private METHOD nowMs(): number
+    // pseudocode: in TS use performance.now() or Date.now()
+    return NOW_IN_MS()
+
+  private METHOD limitHit(): SolveStatus|null
+    if (timeoutMs > 0) AND ((nowMs() - startTimeMs) >= timeoutMs):
+      return SolveStatus.TIMEOUT
+    if (nodeLimit > 0) AND (nodes >= nodeLimit):
+      return SolveStatus.NODE_LIMIT
+    return null
+
+  ------------------------------------------------------------------
+  DIRTY (cells)
+  ------------------------------------------------------------------
+  private METHOD markDirtyCell(cell: number): void
+    w = cellWord(cell)
+    DIRTY[w] = u32(DIRTY[w] | cellBit(cell))
+
+  private METHOD popDirtyCell(): number
+    for w in 0..2:
+      m = u32(DIRTY[w])
+      if m != 0:
+        b = lowbit32(m)
+        DIRTY[w] = u32(DIRTY[w] & u32not(b))
+        return (w << 5) + bitIndexLow(b)
+    return -1
+
+  ------------------------------------------------------------------
+  DIRTY (units)
+  ------------------------------------------------------------------
+  private METHOD markDirtyUnitsForCell(cell: number): void
+    u0 = CELL_TO_UNITS[cell*3 + 0]
+    u1 = CELL_TO_UNITS[cell*3 + 1]
+    u2 = CELL_TO_UNITS[cell*3 + 2]
+    mask = u32((1 << u0) | (1 << u1) | (1 << u2))
+    DIRTY_UNIT[0] = u32(DIRTY_UNIT[0] | mask)
+
+  private METHOD takeDirtyUnits(): U32
+    m = u32(DIRTY_UNIT[0])
+    DIRTY_UNIT[0] = 0
+    return m
+
+  private METHOD unitIsInMask(unitMask: U32, u: number): boolean
+    return (((unitMask >>> u) & 1) != 0)
+
+  ------------------------------------------------------------------
+  TRAIL
+  ------------------------------------------------------------------
+  private METHOD trailMark(): number
+    return trailPtr
+
+  private METHOD pushTrail(cell: number, oldMask: number): boolean
+    if trailPtr >= MAX_TRAIL: return FALSE
+    trailCell[trailPtr] = cell
+    trailMask[trailPtr] = oldMask
+    trailPtr++
+    return TRUE
+
+  private METHOD adjustAssignedCount(oldMask: number, newMask: number): void
+    oldSingle = isSingle32(oldMask)
+    newSingle = isSingle32(newMask)
+    if oldSingle AND !newSingle: assignedCount--
+    else if !oldSingle AND newSingle: assignedCount++
+
+  private METHOD restoreCellPlanesFromMask(cell: number, mask9: number): void
+    w = cellWord(cell)
+    bitC = cellBit(cell)
+
+    // clear this cell from all digit planes
+    for d in 0..8:
+      idx = ((d*3 + w) | 0)
+      DIGIT_PLANE[idx] = u32(DIGIT_PLANE[idx] & u32not(bitC))
+
+    // re-add digits allowed by mask9
+    mm = u32(mask9)
+    while mm != 0:
+      b = lowbit32(mm)
+      mm = u32(mm & (mm - 1))
+      d = bitIndexLow(b)                // 0..8 (since mask9 is 9-bit)
+      idx = ((d*3 + w) | 0)
+      DIGIT_PLANE[idx] = u32(DIGIT_PLANE[idx] | bitC)
+
+  private METHOD undoTo(mark: number): void
+    while trailPtr > mark:
+      trailPtr--
+      cell = trailCell[trailPtr]
+      oldMask = trailMask[trailPtr]
+
+      curMask = CELL_MASK[cell]
+      adjustAssignedCount(curMask, oldMask)
+
+      CELL_MASK[cell] = oldMask
+      restoreCellPlanesFromMask(cell, oldMask)
+
+      markDirtyCell(cell)
+      markDirtyUnitsForCell(cell)
+
+  ------------------------------------------------------------------
+  ACTIVITY (bounded)
+  ------------------------------------------------------------------
+  private METHOD maybeRescaleActivities(): void
+    if ACTIVITY_INC < RESCALE_THRESHOLD: return
+    for c in 0..80:
+      ACTIVITY[c] = ACTIVITY[c] * RESCALE_FACTOR
+    ACTIVITY_INC = ACTIVITY_INC * RESCALE_FACTOR
+
+  private METHOD bumpActivity(cell: number): void
+    ACTIVITY[cell] = ACTIVITY[cell] + ACTIVITY_INC
+    if ACTIVITY[cell] >= RESCALE_THRESHOLD:
+      maybeRescaleActivities()
+
+  private METHOD decayActivities(): void
+    ACTIVITY_INC = ACTIVITY_INC / ACTIVITY_DECAY
+    maybeRescaleActivities()
+
+  ------------------------------------------------------------------
+  RESET / LOAD
+  - resetBase() sets “all domains allowed” and clears structures
+  - load from givens list OR from 81-array grid (0 for empty, 1..9 for given)
+  ------------------------------------------------------------------
+  private METHOD resetBase(): void
+    trailPtr = 0
+    decPtr = 0
+    solutionCount = 0
+
+    DIRTY.fill(0)
+    DIRTY_UNIT[0] = 0
+
+    ACTIVITY_INC = 1.0
+    selectSeed = (selectSeed + 17) % 81
+
+    CELL_MASK.fill(0x1FF)
+    ACTIVITY.fill(0.0)
+
+    assignedCount = 0
+    propChanged = FALSE
+
+    // initialize digit planes to “all cells allowed”
+    for d in 0..8:
+      DIGIT_PLANE[(d*3 + 0)|0] = u32(ALL_WORD_MASK0)
+      DIGIT_PLANE[(d*3 + 1)|0] = u32(ALL_WORD_MASK1)
+      DIGIT_PLANE[(d*3 + 2)|0] = u32(ALL_WORD_MASK2)
+
+    // run unit-based logic at root once
+    DIRTY_UNIT[0] = u32(ALL_UNITS_DIRTY)
+
+  public METHOD resetFromGivens(givens): boolean
+    resetBase()
+    for each (cell, value) in givens:
+      if value < 1 OR value > 9: return FALSE
+      if !assign(cell, value - 1): return FALSE
+    return TRUE
+
+  public METHOD loadGrid81(grid81: Uint8Array): boolean
+    // grid81[c] = 0..9 (0 empty)
+    resetBase()
+    for c in 0..80:
+      v = grid81[c]
+      if v == 0: continue
+      if v < 1 OR v > 9: return FALSE
+      if !assign(c, v - 1): return FALSE
+    return TRUE
+
+  ------------------------------------------------------------------
+  DOMAIN UPDATES (immediate empty-domain detection)
+  ------------------------------------------------------------------
+  private METHOD remove(cell: number, digit: number): boolean
+    bitD = u32(1 << digit)
+    old = CELL_MASK[cell]
+    if (old & bitD) == 0: return TRUE
+
+    newMask = (old & u32not(bitD))
+    if newMask == 0: return FALSE
+
+    if !pushTrail(cell, old): return FALSE
+    adjustAssignedCount(old, newMask)
+
+    CELL_MASK[cell] = newMask
+    propChanged = TRUE
+
+    w = cellWord(cell)
+    bitC = cellBit(cell)
+    idx = ((digit*3 + w) | 0)
+    DIGIT_PLANE[idx] = u32(DIGIT_PLANE[idx] & u32not(bitC))
+
+    markDirtyCell(cell)
+    markDirtyUnitsForCell(cell)
+    return TRUE
+
+  private METHOD assign(cell: number, digit: number): boolean
+    bitD = u32(1 << digit)
+    old = CELL_MASK[cell]
+    if (old & bitD) == 0: return FALSE
+    if old == bitD: return TRUE
+
+    if !pushTrail(cell, old): return FALSE
+    adjustAssignedCount(old, bitD)
+
+    CELL_MASK[cell] = bitD
+    propChanged = TRUE
+
+    w = cellWord(cell)
+    bitC = cellBit(cell)
+
+    // clear from all digits, then set assigned digit
+    for d in 0..8:
+      DIGIT_PLANE[(d*3 + w)|0] = u32(DIGIT_PLANE[(d*3 + w)|0] & u32not(bitC))
+    DIGIT_PLANE[(digit*3 + w)|0] = u32(DIGIT_PLANE[(digit*3 + w)|0] | bitC)
+
+    markDirtyCell(cell)
+    markDirtyUnitsForCell(cell)
+
+    // eliminate digit from peers
+    basePeer = cell * 3
+    for ww in 0..2:
+      peers = u32(PEER_MASK[basePeer + ww])
+      while peers != 0:
+        b = lowbit32(peers)
+        peers = u32(peers & (peers - 1))
+        p = (ww << 5) + bitIndexLow(b)
+        if !remove(p, digit): return FALSE
+
+    return TRUE
+
+  private METHOD restrictTo(cell: number, keepMask9: number): boolean
+    old = CELL_MASK[cell]
+    newMask = (old & keepMask9)
+    if newMask == 0: return FALSE
+    if newMask == old: return TRUE
+
+    if !pushTrail(cell, old): return FALSE
+    adjustAssignedCount(old, newMask)
+
+    CELL_MASK[cell] = newMask
+    propChanged = TRUE
+
+    w = cellWord(cell)
+    bitC = cellBit(cell)
+
+    removed = u32(old & u32not(newMask))
+    while removed != 0:
+      b = lowbit32(removed)
+      removed = u32(removed & (removed - 1))
+      d = bitIndexLow(b)
+      DIGIT_PLANE[(d*3 + w)|0] = u32(DIGIT_PLANE[(d*3 + w)|0] & u32not(bitC))
+
+    markDirtyCell(cell)
+    markDirtyUnitsForCell(cell)
+    return TRUE
+
+  ------------------------------------------------------------------
+  CHEAP RULE: LOCKED CANDIDATES (Pointing/Claiming)
+  - runs for dirty boxes; uses DIGIT_PLANE ∩ UNIT_MASK
+  - detects contradiction if a digit has no candidate in a box
+  ------------------------------------------------------------------
+  private METHOD applyLockedCandidates(unitMaskBits: U32): boolean
+    for boxU in 18..26:
+      if !unitIsInMask(unitMaskBits, boxU): continue
+
+      baseBox = boxU * 3
+      box = boxU - 18
+      br = ((box / 3) | 0)
+      bc = (box % 3)
+
+      rowU0 = br*3 + 0
+      rowU1 = br*3 + 1
+      rowU2 = br*3 + 2
+      colU0 = 9 + (bc*3 + 0)
+      colU1 = 9 + (bc*3 + 1)
+      colU2 = 9 + (bc*3 + 2)
+
+      for d in 0..8:
+        b0 = u32(DIGIT_PLANE[(d*3+0)|0] & UNIT_MASK[baseBox + 0])
+        b1 = u32(DIGIT_PLANE[(d*3+1)|0] & UNIT_MASK[baseBox + 1])
+        b2 = u32(DIGIT_PLANE[(d*3+2)|0] & UNIT_MASK[baseBox + 2])
+
+        if (b0|b1|b2) == 0: return FALSE
+
+        // pointing rows
+        for each rU in [rowU0,rowU1,rowU2]:
+          baseRow = rU * 3
+
+          if (u32(b0 & u32not(UNIT_MASK[baseRow+0])) == 0) AND
+             (u32(b1 & u32not(UNIT_MASK[baseRow+1])) == 0) AND
+             (u32(b2 & u32not(UNIT_MASK[baseRow+2])) == 0):
+
+            out0 = u32(UNIT_MASK[baseRow+0] & u32not(UNIT_MASK[baseBox+0])) & u32(ALL_WORD_MASK0)
+            out1 = u32(UNIT_MASK[baseRow+1] & u32not(UNIT_MASK[baseBox+1])) & u32(ALL_WORD_MASK1)
+            out2 = u32(UNIT_MASK[baseRow+2] & u32not(UNIT_MASK[baseBox+2])) & u32(ALL_WORD_MASK2)
+
+            out0 = u32(out0 & DIGIT_PLANE[(d*3+0)|0])
+            out1 = u32(out1 & DIGIT_PLANE[(d*3+1)|0])
+            out2 = u32(out2 & DIGIT_PLANE[(d*3+2)|0])
+
+            for ww in 0..2:
+              mm = (ww==0 ? out0 : ww==1 ? out1 : out2)
+              while mm != 0:
+                bb = lowbit32(mm)
+                mm = u32(mm & (mm - 1))
+                cell = (ww<<5) + bitIndexLow(bb)
+                if !remove(cell, d): return FALSE
+
+        // pointing cols
+        for each cU in [colU0,colU1,colU2]:
+          baseCol = cU * 3
+
+          if (u32(b0 & u32not(UNIT_MASK[baseCol+0])) == 0) AND
+             (u32(b1 & u32not(UNIT_MASK[baseCol+1])) == 0) AND
+             (u32(b2 & u32not(UNIT_MASK[baseCol+2])) == 0):
+
+            out0 = u32(UNIT_MASK[baseCol+0] & u32not(UNIT_MASK[baseBox+0])) & u32(ALL_WORD_MASK0)
+            out1 = u32(UNIT_MASK[baseCol+1] & u32not(UNIT_MASK[baseBox+1])) & u32(ALL_WORD_MASK1)
+            out2 = u32(UNIT_MASK[baseCol+2] & u32not(UNIT_MASK[baseBox+2])) & u32(ALL_WORD_MASK2)
+
+            out0 = u32(out0 & DIGIT_PLANE[(d*3+0)|0])
+            out1 = u32(out1 & DIGIT_PLANE[(d*3+1)|0])
+            out2 = u32(out2 & DIGIT_PLANE[(d*3+2)|0])
+
+            for ww in 0..2:
+              mm = (ww==0 ? out0 : ww==1 ? out1 : out2)
+              while mm != 0:
+                bb = lowbit32(mm)
+                mm = u32(mm & (mm - 1))
+                cell = (ww<<5) + bitIndexLow(bb)
+                if !remove(cell, d): return FALSE
+
+    return TRUE
+
+  ------------------------------------------------------------------
+  HEAVY RULE: HIDDEN PAIRS (unit-scheduled)
+  ------------------------------------------------------------------
+  private METHOD applyHiddenPairs(unitMaskBits: U32): boolean
+    for u in 0..26:
+      if heavyDirtyUnitsOnly AND !unitIsInMask(unitMaskBits, u): continue
+
+      baseU = u * 3
+
+      for d in 0..8:
+        hpCand0[d] = u32(DIGIT_PLANE[(d*3+0)|0] & UNIT_MASK[baseU + 0])
+        hpCand1[d] = u32(DIGIT_PLANE[(d*3+1)|0] & UNIT_MASK[baseU + 1])
+        hpCand2[d] = u32(DIGIT_PLANE[(d*3+2)|0] & UNIT_MASK[baseU + 2])
+        hpCnt[d] = popcount32(hpCand0[d]) + popcount32(hpCand1[d]) + popcount32(hpCand2[d])
+
+      for d1 in 0..8:
+        if hpCnt[d1] != 2: continue
+        for d2 in (d1+1)..8:
+          if hpCnt[d2] != 2: continue
+          if hpCand0[d1] != hpCand0[d2]: continue
+          if hpCand1[d1] != hpCand1[d2]: continue
+          if hpCand2[d1] != hpCand2[d2]: continue
+
+          keepMask9 = u32((1<<d1) | (1<<d2))
+
+          for ww in 0..2:
+            mm = (ww==0 ? hpCand0[d1] : ww==1 ? hpCand1[d1] : hpCand2[d1])
+            while mm != 0:
+              bb = lowbit32(mm)
+              mm = u32(mm & (mm - 1))
+              cell = (ww<<5) + bitIndexLow(bb)
+              if !restrictTo(cell, keepMask9): return FALSE
+
+    return TRUE
+
+  ------------------------------------------------------------------
+  PROPAGATION (FIXPOINT)
+  - returns TRUE if consistent; FALSE if contradiction
+  - also stops early on limitHit() by setting internal “earlyStatus”
+  ------------------------------------------------------------------
+  private earlyStatus: SolveStatus|null
+
+  private METHOD propagate(heavy: boolean): boolean
+    do:
+      propChanged = FALSE
+
+      if (earlyStatus = limitHit()) != null:
+        return TRUE   // not a contradiction; caller will interpret earlyStatus
+
+      // (A) cell-dirty: naked singles -> peer eliminations
+      while TRUE:
+        c = popDirtyCell()
+        if c == -1: break
+
+        if (earlyStatus = limitHit()) != null:
+          return TRUE
+
+        m = CELL_MASK[c]
+        if m == 0: return FALSE
+
+        if isSingle32(m):
+          d = bitIndexLow(m)
+          basePeer = c * 3
+          for ww in 0..2:
+            mask = u32(DIGIT_PLANE[(d*3+ww)|0] & PEER_MASK[basePeer + ww])
+            while mask != 0:
+              bb = lowbit32(mask)
+              mask = u32(mask & (mask - 1))
+              p = (ww<<5) + bitIndexLow(bb)
+              if !remove(p, d): return FALSE
+
+      // (B) unit-dirty snapshot
+      unitsToCheck = takeDirtyUnits()
+
+      // hidden singles (dirty units only)
+      for u in 0..26:
+        if !unitIsInMask(unitsToCheck, u): continue
+
+        if (earlyStatus = limitHit()) != null:
+          return TRUE
+
+        baseU = u * 3
+        for d in 0..8:
+          m0 = u32(DIGIT_PLANE[(d*3+0)|0] & UNIT_MASK[baseU + 0])
+          m1 = u32(DIGIT_PLANE[(d*3+1)|0] & UNIT_MASK[baseU + 1])
+          m2 = u32(DIGIT_PLANE[(d*3+2)|0] & UNIT_MASK[baseU + 2])
+
+          total = popcount32(m0) + popcount32(m1) + popcount32(m2)
+          if total == 0: return FALSE
+          if total == 1:
+            if m0 != 0: cell = bitIndexLow(lowbit32(m0))
+            else if m1 != 0: cell = 32 + bitIndexLow(lowbit32(m1))
+            else: cell = 64 + bitIndexLow(lowbit32(m2))
+            if !assign(cell, d): return FALSE
+
+      // locked candidates
+      if !applyLockedCandidates(unitsToCheck): return FALSE
+
+      // heavy rules scheduled
+      if heavy AND heavyEnabled:
+        if !applyHiddenPairs(unitsToCheck): return FALSE
+
+    while propChanged
+
+    return TRUE
+
+  ------------------------------------------------------------------
+  SELECT CELL (MRV + activity OR MRV + deterministic random tie-break)
+  ------------------------------------------------------------------
+  private METHOD selectCell(): number
+    best = -1
+    bestCandidates = 999
+    bestActivity = -Infinity
+    start = selectSeed
+
+    for k in 0..80:
+      c = (start + k) % 81
+      m = CELL_MASK[c]
+      if m == 0: continue
+      if isSingle32(m): continue
+
+      cand = popcount9(m)
+      if cand < bestCandidates:
+        bestCandidates = cand
+        bestActivity = ACTIVITY[c]
+        best = c
+      else if cand == bestCandidates:
+        if randomMRVTieBreak:
+          // deterministic randomized tie-break
+          // choose c with probability 1/2 (or use rng threshold)
+          if (rngNextU32() & 1) == 0:
+            bestActivity = ACTIVITY[c]
+            best = c
+        else:
+          // activity tie-break (SAT-style)
+          if ACTIVITY[c] > bestActivity:
+            bestActivity = ACTIVITY[c]
+            best = c
+
+    return best
+
+  ------------------------------------------------------------------
+  SELECT VALUE (digit) FROM 9-bit domain
+  - ordered: lowest-bit (fast)
+  - randomized: choose uniform over set bits (deterministic)
+  ------------------------------------------------------------------
+  private METHOD pickDigitFromDomain(domain9: number): number
+    if !randomValueChoice:
+      bit = lowbit32(domain9)
+      return bitIndexLow(bit)
+
+    k = popcount9(domain9)
+    idx = rngNextInt(k)        // 0..k-1
+    mm = u32(domain9)
+    while TRUE:
+      b = lowbit32(mm)
+      mm = u32(mm & (mm - 1))
+      if idx == 0: return bitIndexLow(b)
+      idx--
+
+  ------------------------------------------------------------------
+  SOLUTION SAVE / EXPORT
+  ------------------------------------------------------------------
+  private METHOD saveSolution(): void
+    for c in 0..80:
+      SOLUTION[c] = bitIndexLow(CELL_MASK[c])   // 0..8
+
+  public METHOD getSolution81(): Uint8Array|null
+    if solutionCount <= 0: return null
+    out = new Uint8Array(81)
+    for c in 0..80:
+      out[c] = SOLUTION[c] + 1
+    return out
+
+  public METHOD getStats(): SolveStats
+    return {
+      conflicts: conflicts,
+      guessCount: guessCount,
+      maxDepth: maxDepth,
+      nodes: nodes,
+      elapsedMs: (nowMs() - startTimeMs)
+    }
+
+  ------------------------------------------------------------------
+  CORE DFS (iterative), generalized stopAtSolutions
+  - returns SolveStatus if early-exit by limit else null
+  ------------------------------------------------------------------
+  private METHOD solveInternal(stopAt: number): SolveStatus|null
+    rootMark = trailMark()
+
+    // ensure unit checks run fully at root
+    DIRTY_UNIT[0] = u32(DIRTY_UNIT[0] | ALL_UNITS_DIRTY)
+
+    earlyStatus = null
+    if !propagate(TRUE):
+      conflicts++
+      decayActivities()
+      undoTo(rootMark)
+      return null
+    if earlyStatus != null:
+      undoTo(rootMark)
+      return earlyStatus
+
+    if assignedCount == 81:
+      saveSolution()
+      solutionCount = 1
+      undoTo(rootMark)
+      return null
+
+    cell0 = selectCell()
+    if cell0 == -1:
+      conflicts++
+      decayActivities()
+      undoTo(rootMark)
+      return null
+
+    decCell[0] = cell0
+    decDomain[0] = CELL_MASK[cell0]
+    decMark[0] = trailMark()
+    decPtr = 1
+
+    guessCount++
+    bumpActivity(cell0)
+    if decPtr > maxDepth: maxDepth = decPtr
+
+    while decPtr > 0 AND solutionCount < stopAt:
+      if (s = limitHit()) != null:
+        undoTo(rootMark)
+        return s
+
+      top = decPtr - 1
+      cell = decCell[top]
+      domain = decDomain[top]
+      enterMark = decMark[top]
+
+      undoTo(enterMark)
+
+      if domain == 0:
+        decPtr--
+        conflicts++
+        decayActivities()
+        continue
+
+      // value choice
+      digit = pickDigitFromDomain(domain)
+
+      // remove chosen digit from remaining domain on this frame
+      bit = u32(1 << digit)
+      domain = u32(domain & u32not(bit))
+      decDomain[top] = domain
+
+      // node = one branching attempt
+      nodes++
+
+      attemptMark = trailMark()
+      if !assign(cell, digit):
+        conflicts++
+        decayActivities()
+        undoTo(attemptMark)
+        continue
+
+      depthNow = decPtr
+      heavyNow =
+        (heavyEnabled AND
+         (heavyAtRootOnly ? FALSE : (depthNow <= heavyDepthLimit)))
+
+      earlyStatus = null
+      if !propagate(heavyNow):
+        conflicts++
+        decayActivities()
+        undoTo(attemptMark)
+        continue
+      if earlyStatus != null:
+        // early exit by limit (not contradiction)
+        undoTo(rootMark)
+        return earlyStatus
+
+      if assignedCount == 81:
+        if solutionCount == 0: saveSolution()
+        solutionCount++
+        undoTo(attemptMark)
+        continue
+
+      nextCell = selectCell()
+      if nextCell == -1:
+        conflicts++
+        decayActivities()
+        undoTo(attemptMark)
+        continue
+
+      decCell[decPtr] = nextCell
+      decDomain[decPtr] = CELL_MASK[nextCell]
+      decMark[decPtr] = trailMark()
+      decPtr++
+
+      guessCount++
+      bumpActivity(nextCell)
+      if decPtr > maxDepth: maxDepth = decPtr
+
+    undoTo(rootMark)
+    return null
+
+  ------------------------------------------------------------------
+  PUBLIC SOLVE MODES (generator-fit)
+  ------------------------------------------------------------------
+  public METHOD solveStopAtOne(): SolveResult
+    // assumes grid already loaded via loadGrid81 / resetFromGivens
+    return solveWithStopAt(1, TRUE)
+
+  public METHOD solveStopAtTwo(): SolveResult
+    return solveWithStopAt(2, FALSE)
+
+  public METHOD countSolutions(stopAt: number = 2): SolveResult
+    // returns solutionCount up to stopAt; status MULTIPLE if >=2
+    return solveWithStopAt(stopAt, FALSE)
+
+  private METHOD solveWithStopAt(stopAt: number, computeDifficulty: boolean): SolveResult
+    // stopAt must be >= 1
+    clearStats()
+    startTimeMs = nowMs()
+
+    // solveInternal will use current limits and config
+    early = solveInternal(stopAt)
+
+    elapsed = (nowMs() - startTimeMs)
+
+    if early == SolveStatus.TIMEOUT:
+      return { status: SolveStatus.TIMEOUT, solutionCount: solutionCount,
+               solution81: (solutionCount>0 ? getSolution81() : null),
+               difficulty: null,
+               stats: { conflicts, guessCount, maxDepth, nodes, elapsedMs: elapsed } }
+
+    if early == SolveStatus.NODE_LIMIT:
+      return { status: SolveStatus.NODE_LIMIT, solutionCount: solutionCount,
+               solution81: (solutionCount>0 ? getSolution81() : null),
+               difficulty: null,
+               stats: { conflicts, guessCount, maxDepth, nodes, elapsedMs: elapsed } }
+
+    if solutionCount == 0:
+      return { status: SolveStatus.NO_SOLUTION, solutionCount: 0, solution81: null,
+               difficulty: null,
+               stats: { conflicts, guessCount, maxDepth, nodes, elapsedMs: elapsed } }
+
+    if solutionCount >= 2:
+      return { status: SolveStatus.MULTIPLE, solutionCount: solutionCount, solution81: null,
+               difficulty: null,
+               stats: { conflicts, guessCount, maxDepth, nodes, elapsedMs: elapsed } }
+
+    // UNIQUE
+    diff = null
+    if computeDifficulty:
+      if guessCount == 0 AND conflicts == 0:
+        diff = Difficulty.EASY
+      else if maxDepth <= 2 AND guessCount <= 5 AND conflicts <= 20:
+        diff = Difficulty.MEDIUM
+      else if maxDepth <= 6 AND guessCount <= 50 AND conflicts <= 500:
+        diff = Difficulty.HARD
+      else:
+        diff = Difficulty.SAMURAI
+
+    return { status: SolveStatus.UNIQUE, solutionCount: 1, solution81: getSolution81(),
+             difficulty: diff,
+             stats: { conflicts, guessCount, maxDepth, nodes, elapsedMs: elapsed } }
+
+  ------------------------------------------------------------------
+  LEGACY-COMPAT WRAPPER (your previous SOLVE signature)
+  ------------------------------------------------------------------
+  public METHOD SOLVE(givens):
+    if !resetFromGivens(givens):
+      return (SolveStatus.NO_SOLUTION, null, null)
+
+    res = solveWithStopAt(2, TRUE)
+    if res.status != SolveStatus.UNIQUE:
+      return (res.status, null, null)
+
+    return (SolveStatus.UNIQUE, res.difficulty, res.solution81)
+
+--------------------------------------------------------------------
+USAGE
+--------------------------------------------------------------------
+INIT_POPCOUNT_9BIT()
+masks = GENERATE_MASKS()
+
+solver = new SudokuSolver(masks)
+
+// Solve given puzzle (givens: list of (cell,value))
+ok = solver.resetFromGivens(givens)
+res = solver.countSolutions(2)      // status UNIQUE / MULTIPLE / NO_SOLUTION / NODE_LIMIT / TIMEOUT
+
+// Generator-style usage:
+solver.clearStats()
+solver.clearLimits()
+solver.setRandomSeed(boardIdSeed)
+solver.enableRandomMRVTieBreak(TRUE)
+solver.enableRandomValueChoice(TRUE)
+solver.enableHeavyRules(TRUE)
+solver.setNodeLimit(20000)          // for uniqueness checks, etc.
+solver.loadGrid81(grid81)
+res1 = solver.solveStopAtOne()      // stops after first solution (critical for generating full grids)
+
+====================================================================
+END
+====================================================================
+

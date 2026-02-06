@@ -1,0 +1,524 @@
+========================================================
+SUDOKU GENERATOR — ENGINE PSEUDOCODE (V4.1 SOLVER-SYNC)
+Purpose:
+- Generate a solved grid (deterministic from a seed)
+- Carve clues out (optionally with symmetry) while enforcing UNIQUE solution
+- Assign an approximate difficulty label for each generated puzzle:
+    EASY, MEDIUM, HARD, SAMURAI
+
+This pseudocode is aligned with the solver.js public API and its difficulty logic:
+- Uniqueness is verified using stopAt=2 (countSolutions(2) / solveStopAtTwo()).
+- Difficulty is computed using solveStopAtOne() AFTER uniqueness is established.
+========================================================
+
+ENUM Difficulty  = { EASY, MEDIUM, HARD, SAMURAI }
+ENUM Symmetry    = { NONE, ROT180, ROT90, MIRROR_XY }
+ENUM SolveStatus = { NO_SOLUTION, UNIQUE, MULTIPLE, NODE_LIMIT, TIMEOUT }
+
+CONST EMPTY = 0
+
+// generation attempts
+CONST MAX_GEN_ATTEMPTS = 100
+
+// clue floors (tune as desired)
+CONST THEORETICAL_MIN_CLUES = 17
+CONST MIN_CLUES_PER_DIFF = { EASY: 32, MEDIUM: 27, HARD: 22, SAMURAI: 17 }
+
+// probing cadence (tune as desired)
+CONST PROBE_GATE  = { EASY: 50, MEDIUM: 45, HARD: 40, SAMURAI: 40 }
+CONST PROBE_EVERY = { EASY: 1,  MEDIUM: 3,  HARD: 2,  SAMURAI: 2  }
+
+// solver limits (tune as desired)
+CONST UNIQUE_NODE_LIMIT = 20000
+CONST DIFF_NODE_LIMIT   = 8000
+
+CONST UNIQUE_TIMEOUT_MS = 0      // 0 means "no timeout" (optional)
+CONST DIFF_TIMEOUT_MS   = 0
+
+// if target=HARD, allow SAMURAI as "acceptable hard+" (optional)
+CONST ALLOW_HARD_TO_ACCEPT_SAMURAI = TRUE
+
+// if no perfect match found, return best-so-far (optional)
+CONST ALLOW_BEST_SO_FAR_FALLBACK = TRUE
+
+--------------------------------------------------------
+SOLVER API CONTRACT (as implemented in solver.js)
+--------------------------------------------------------
+TYPE SolveStats = {
+  conflicts: int
+  guessCount: int
+  maxDepth: int
+  nodes: int
+  hiddenSingles: int
+  lockedCandidateElims: int
+  hiddenPairElims: int
+  elapsedMs: int
+}
+
+TYPE SolveResult = {
+  status: SolveStatus
+  solutionCount: int
+  solution81: Uint8Array(81) | null
+  difficulty: Difficulty | null         // populated by solveStopAtOne() only
+  stats: SolveStats
+}
+
+FUNCTION generateMasks(): Masks
+
+CLASS SudokuSolver(masks: Masks):
+  METHOD clearStats()
+  METHOD clearLimits()                  // resets nodeLimit + timeoutMs
+  METHOD setNodeLimit(limit: int)
+  METHOD setTimeoutMs(ms: int)
+  METHOD setRandomSeed(seed32: uint32)
+  METHOD enableRandomMRVTieBreak(on: bool)
+  METHOD enableRandomValueChoice(on: bool)
+  METHOD enableHeavyRules(on: bool)
+  METHOD loadGrid81(grid81: Uint8Array(81)) -> bool
+
+  METHOD solveStopAtOne() -> SolveResult      // stopAt=1, computeDifficulty=TRUE
+  METHOD solveStopAtTwo() -> SolveResult      // stopAt=2, computeDifficulty=FALSE
+  METHOD countSolutions(stopAt: int = 2) -> SolveResult   // stopAt=stopAt, computeDifficulty=FALSE
+
+--------------------------------------------------------
+INDEX UTILITIES
+--------------------------------------------------------
+FUNCTION row(i): return (i / 9) | 0
+FUNCTION col(i): return i % 9
+FUNCTION idx(r,c): return r*9 + c
+
+FUNCTION countClues(grid81):
+  n = 0
+  FOR i IN 0..80:
+    IF grid81[i] != EMPTY: n++
+  return n
+
+--------------------------------------------------------
+FAST SOLVED-GRID VALIDATION (optional sanity check)
+--------------------------------------------------------
+FUNCTION isValidSolvedGrid(grid81):
+  // all filled
+  FOR i IN 0..80:
+    IF grid81[i] == EMPTY: return FALSE
+
+  // rows
+  FOR r IN 0..8:
+    seen = boolean[10] FALSE
+    FOR c IN 0..8:
+      v = grid81[idx(r,c)]
+      IF v < 1 OR v > 9 OR seen[v]: return FALSE
+      seen[v] = TRUE
+
+  // cols
+  FOR c IN 0..8:
+    seen = boolean[10] FALSE
+    FOR r IN 0..8:
+      v = grid81[idx(r,c)]
+      IF v < 1 OR v > 9 OR seen[v]: return FALSE
+      seen[v] = TRUE
+
+  // boxes
+  FOR br IN 0..2:
+    FOR bc IN 0..2:
+      seen = boolean[10] FALSE
+      FOR dr IN 0..2:
+        FOR dc IN 0..2:
+          v = grid81[idx(br*3+dr, bc*3+dc)]
+          IF v < 1 OR v > 9 OR seen[v]: return FALSE
+          seen[v] = TRUE
+
+  return TRUE
+
+--------------------------------------------------------
+DIFFICULTY UTILITIES (synced to solver.js)
+--------------------------------------------------------
+FUNCTION difficultyRank(d):
+  IF d == EASY: return 0
+  IF d == MEDIUM: return 1
+  IF d == HARD: return 2
+  return 3
+
+FUNCTION acceptsDifficulty(target, diff):
+  IF diff == target: return TRUE
+  IF target == HARD AND diff == SAMURAI AND ALLOW_HARD_TO_ACCEPT_SAMURAI: return TRUE
+  return FALSE
+
+FUNCTION scoreToTarget(target, diff, clues):
+  dist = abs(difficultyRank(diff) - difficultyRank(target))
+  minClues = MIN_CLUES_PER_DIFF[target]
+  cluePenalty = 0
+  IF clues < minClues: cluePenalty = (minClues - clues)
+  return dist * 1000 + cluePenalty
+
+FUNCTION classifyDifficultyFromStats(stats):
+  // EXACTLY matches solver.js logicScore thresholds
+  logicScore =
+      stats.hiddenSingles
+    + stats.lockedCandidateElims * 2
+    + stats.hiddenPairElims * 4
+    + stats.guessCount * 10
+    + stats.maxDepth * 3
+    + stats.conflicts
+
+  IF logicScore <= 700:  return EASY
+  IF logicScore <= 900:  return MEDIUM
+  IF logicScore <= 1200: return HARD
+  return SAMURAI
+
+--------------------------------------------------------
+SOLVER CONFIG (determinism + purpose-specific toggles)
+--------------------------------------------------------
+FUNCTION configureSolverForGeneration(s):
+  s.clearStats()
+  s.clearLimits()
+  // generation wants a varied solved grid:
+  s.enableHeavyRules(TRUE)
+  s.enableRandomMRVTieBreak(TRUE)
+  s.enableRandomValueChoice(TRUE)
+
+FUNCTION configureSolverForUniqueness(s):
+  s.clearStats()
+  s.clearLimits()
+  // determinism; heavy rules can stay ON for more pruning (does not change correctness)
+  s.enableHeavyRules(TRUE)
+  s.enableRandomMRVTieBreak(FALSE)
+  s.enableRandomValueChoice(FALSE)
+
+FUNCTION configureSolverForDifficulty(s):
+  s.clearStats()
+  s.clearLimits()
+  // determinism; keep heavy rules ON so difficulty labels match solver’s normal behavior
+  s.enableHeavyRules(TRUE)
+  s.enableRandomMRVTieBreak(FALSE)
+  s.enableRandomValueChoice(FALSE)
+
+--------------------------------------------------------
+SYMMETRY MAPPING + ORBITS
+--------------------------------------------------------
+FUNCTION mapCell(sym, i):
+  r = row(i); c = col(i)
+  IF sym == ROT180:    return idx(8 - r, 8 - c)
+  IF sym == ROT90:     return idx(c, 8 - r)
+  IF sym == MIRROR_XY: return idx(c, r)        // main diagonal
+  return i                                     // NONE
+
+FUNCTION getSymmetryOrbits(sym):
+  orbits = []
+  seen = boolean[81] FALSE
+  CONST MAX_ORBIT_STEPS = 8
+
+  FOR i IN 0..80:
+    IF seen[i]: continue
+    orbit = []
+    curr = i
+    steps = 0
+    WHILE TRUE:
+      // orbit closure
+      IF curr IN orbit: break
+      orbit.append(curr)
+      seen[curr] = TRUE
+      curr = mapCell(sym, curr)
+      steps++
+      IF steps > MAX_ORBIT_STEPS:
+        THROW "Symmetry mapping error: orbit did not close"
+    orbits.append(orbit)
+
+  return orbits
+
+--------------------------------------------------------
+OPTIONAL: HEURISTIC ORBIT ORDER (center bias)
+--------------------------------------------------------
+FUNCTION cellPriority(i):
+  r = row(i); c = col(i)
+  boxR = (r / 3) | 0
+  boxC = (c / 3) | 0
+  s = 0
+  IF r IN {3,4,5}: s += 2
+  IF c IN {3,4,5}: s += 2
+  IF boxR == 1 AND boxC == 1: s += 3
+  return s
+
+FUNCTION orbitPriority(orbit):
+  sum = 0
+  FOR each i IN orbit: sum += cellPriority(i)
+  return sum
+
+FUNCTION orderOrbitsByPriority(orbits):
+  scored = []
+  FOR oid IN 0..len(orbits)-1:
+    scored.append((oid, orbitPriority(orbits[oid])))
+  sortDescendingByScore(scored)
+  return [oid for (oid,score) in scored]
+
+--------------------------------------------------------
+PHASE 1: GENERATE A SOLVED GRID (seeded)
+NOTE: stopAt=1 is fine here; we only need one completion.
+--------------------------------------------------------
+FUNCTION generateSolvedGrid(solverGen, seed32):
+  emptyGrid = Uint8Array(81) filled EMPTY
+
+  solverGen.clearStats()
+  solverGen.clearLimits()
+  solverGen.setRandomSeed(seed32)
+  solverGen.enableHeavyRules(TRUE)
+  solverGen.enableRandomMRVTieBreak(TRUE)
+  solverGen.enableRandomValueChoice(TRUE)
+
+  ok = solverGen.loadGrid81(emptyGrid)
+  IF !ok: THROW "Engine error: loadGrid81(empty) failed"
+
+  // countSolutions(1) also works; solveStopAtOne is fine too.
+  res = solverGen.countSolutions(stopAt = 1)
+
+  IF res.status != UNIQUE OR res.solution81 == null:
+    THROW "Engine error: failed to produce a solved grid"
+
+  solved = res.solution81
+  IF NOT isValidSolvedGrid(solved):
+    THROW "Engine error: solver returned invalid solved grid"
+
+  return solved
+
+--------------------------------------------------------
+PHASE 2: UNIQUENESS CHECK (stopAt=2)
+Conservative handling:
+- NODE_LIMIT/TIMEOUT => treat as NOT unique (reject)
+--------------------------------------------------------
+FUNCTION hasUniqueSolution(solverUniq, grid81):
+  solverUniq.clearStats()
+  solverUniq.clearLimits()
+  solverUniq.enableHeavyRules(TRUE)
+  solverUniq.enableRandomMRVTieBreak(FALSE)
+  solverUniq.enableRandomValueChoice(FALSE)
+
+  ok = solverUniq.loadGrid81(grid81)
+  IF !ok: return FALSE
+
+  solverUniq.setNodeLimit(UNIQUE_NODE_LIMIT)
+  IF UNIQUE_TIMEOUT_MS > 0: solverUniq.setTimeoutMs(UNIQUE_TIMEOUT_MS)
+
+  res = solverUniq.countSolutions(stopAt = 2)
+
+  IF res.status == UNIQUE:      return TRUE
+  // MULTIPLE / NO_SOLUTION / NODE_LIMIT / TIMEOUT => reject
+  return FALSE
+
+--------------------------------------------------------
+PHASE 3: DIFFICULTY PROBE (stopAt=1 + solver difficulty)
+This is called only AFTER uniqueness is already known true.
+- UNIQUE => take res.difficulty (preferred)
+- NODE_LIMIT/TIMEOUT => SAMURAI (signal "too hard under probe limits")
+- NO_SOLUTION => null
+--------------------------------------------------------
+FUNCTION probeDifficulty(solverDiff, grid81):
+  solverDiff.clearStats()
+  solverDiff.clearLimits()
+  solverDiff.enableHeavyRules(TRUE)
+  solverDiff.enableRandomMRVTieBreak(FALSE)
+  solverDiff.enableRandomValueChoice(FALSE)
+
+  ok = solverDiff.loadGrid81(grid81)
+  IF !ok: return null
+
+  solverDiff.setNodeLimit(DIFF_NODE_LIMIT)
+  IF DIFF_TIMEOUT_MS > 0: solverDiff.setTimeoutMs(DIFF_TIMEOUT_MS)
+
+  res = solverDiff.solveStopAtOne()
+
+  IF res.status == UNIQUE:
+    IF res.difficulty != null: return res.difficulty
+    return classifyDifficultyFromStats(res.stats)   // fallback, still solver-synced
+
+  IF res.status == NODE_LIMIT OR res.status == TIMEOUT:
+    return SAMURAI
+
+  // NO_SOLUTION should not happen if uniqueness gate was true, but keep safe
+  return null
+
+--------------------------------------------------------
+PHASE 4: CARVING (orbit-based)
+Key rules:
+- Only permanently blacklist orbits that break uniqueness (monotone safe).
+- Overshoot (too hard) is NOT monotone, so do not blacklist on overshoot.
+- Return puzzle + its computed difficulty + clueCount.
+--------------------------------------------------------
+TYPE CarveResult = { puzzle81: Uint8Array(81), difficulty: Difficulty, clues: int }
+
+FUNCTION carvePuzzle(solverUniq, solverDiff, solvedGrid81, targetDiff, symmetry) -> CarveResult | null:
+  puzzle = copy(solvedGrid81)
+
+  orbits = getSymmetryOrbits(symmetry)
+  order  = orderOrbitsByPriority(orbits)
+
+  clueCount  = 81
+  floorClues = max(THEORETICAL_MIN_CLUES, MIN_CLUES_PER_DIFF[targetDiff])
+
+  targetRank = difficultyRank(targetDiff)
+  allowedMaxRank = targetRank
+  IF targetDiff == HARD AND ALLOW_HARD_TO_ACCEPT_SAMURAI:
+    allowedMaxRank = 3
+
+  blacklist = boolean[len(orbits)] FALSE   // ONLY for non-unique orbits
+
+  // best-so-far tracking
+  bestInRange = null   // CarveResult
+  bestInRangeScore = +INFINITY
+  bestAny = null       // CarveResult
+  bestAnyScore = +INFINITY
+
+  acceptedRemovals = 0
+  probeGate  = PROBE_GATE[targetDiff]
+  probeEvery = PROBE_EVERY[targetDiff]
+
+  FOR each oid IN order:
+    IF blacklist[oid]: continue
+
+    orbit = orbits[oid]
+    k = length(orbit)
+
+    IF clueCount - k < floorClues:
+      continue
+
+    // remove orbit (save old values)
+    savedVals = array[k]
+    FOR t IN 0..k-1:
+      i = orbit[t]
+      savedVals[t] = puzzle[i]
+      puzzle[i] = EMPTY
+
+    // uniqueness gate
+    IF NOT hasUniqueSolution(solverUniq, puzzle):
+      // revert and permanently blacklist this orbit
+      FOR t IN 0..k-1:
+        puzzle[orbit[t]] = savedVals[t]
+      blacklist[oid] = TRUE
+      continue
+
+    // accepted removal (unique still holds)
+    clueCount -= k
+    acceptedRemovals++
+
+    // periodic difficulty probe once we are in the “interesting” clue range
+    shouldProbe = (clueCount <= probeGate) AND (acceptedRemovals % probeEvery == 0)
+    IF shouldProbe:
+      curDiff = probeDifficulty(solverDiff, puzzle)
+      IF curDiff == null:
+        // revert this removal (do not blacklist)
+        FOR t IN 0..k-1:
+          puzzle[orbit[t]] = savedVals[t]
+        clueCount += k
+        continue
+
+      curRank = difficultyRank(curDiff)
+      curScore = scoreToTarget(targetDiff, curDiff, clueCount)
+
+      // store best-any snapshot
+      IF curScore < bestAnyScore:
+        bestAnyScore = curScore
+        bestAny = { puzzle81: copy(puzzle), difficulty: curDiff, clues: clueCount }
+
+      // store best-in-range snapshot
+      inRange = (curRank <= allowedMaxRank)
+      IF inRange AND curScore < bestInRangeScore:
+        bestInRangeScore = curScore
+        bestInRange = { puzzle81: copy(puzzle), difficulty: curDiff, clues: clueCount }
+
+      // success condition
+      IF acceptsDifficulty(targetDiff, curDiff) AND clueCount >= MIN_CLUES_PER_DIFF[targetDiff]:
+        return { puzzle81: puzzle, difficulty: curDiff, clues: clueCount }
+
+      // overshoot (too hard): revert this removal, do not blacklist
+      IF curRank > allowedMaxRank:
+        FOR t IN 0..k-1:
+          puzzle[orbit[t]] = savedVals[t]
+        clueCount += k
+        continue
+
+  // final probe on whatever we ended with
+  finalDiff = probeDifficulty(solverDiff, puzzle)
+  IF finalDiff != null AND acceptsDifficulty(targetDiff, finalDiff) AND clueCount >= MIN_CLUES_PER_DIFF[targetDiff]:
+    return { puzzle81: puzzle, difficulty: finalDiff, clues: clueCount }
+
+  IF ALLOW_BEST_SO_FAR_FALLBACK:
+    IF bestInRange != null: return bestInRange
+    IF bestAny != null: return bestAny
+
+  return null
+
+--------------------------------------------------------
+DETERMINISTIC SEEDING (uint32-friendly)
+(Use only uint32 numbers so TS/JS "number" is safe.)
+--------------------------------------------------------
+FUNCTION hash32(baseSeed32, attempt):
+  // simple xorshift-style mixing; must return uint32
+  x = (baseSeed32 ^ (attempt * 0x9E3779B9)) >>> 0
+  x ^= (x << 13) >>> 0
+  x ^= (x >>> 17)
+  x ^= (x << 5) >>> 0
+  return x >>> 0
+
+--------------------------------------------------------
+PIPELINE: generateSudoku() returns puzzle + seed + difficulty + clueCount
+--------------------------------------------------------
+TYPE GeneratedPuzzle = {
+  puzzle81: Uint8Array(81),
+  seed32: uint32,                 // deterministic BoardID seed used for the solved grid
+  difficulty: Difficulty,
+  clues: int
+}
+
+FUNCTION generateSudoku(targetDiff, symmetry, baseSeed32) -> GeneratedPuzzle:
+  masks = generateMasks()
+
+  solverGen  = new SudokuSolver(masks)
+  solverUniq = new SudokuSolver(masks)
+  solverDiff = new SudokuSolver(masks)
+
+  configureSolverForGeneration(solverGen)
+  configureSolverForUniqueness(solverUniq)
+  configureSolverForDifficulty(solverDiff)
+
+  bestGlobal = null
+  bestGlobalScore = +INFINITY
+
+  FOR attempt FROM 1 TO MAX_GEN_ATTEMPTS:
+    seed32 = hash32(baseSeed32, attempt)
+
+    solved = generateSolvedGrid(solverGen, seed32)
+
+    carved = carvePuzzle(solverUniq, solverDiff, solved, targetDiff, symmetry)
+    IF carved == null:
+      continue
+
+    // carved already includes difficulty + clueCount
+    score = scoreToTarget(targetDiff, carved.difficulty, carved.clues)
+    IF score < bestGlobalScore:
+      bestGlobalScore = score
+      bestGlobal = {
+        puzzle81: carved.puzzle81,
+        seed32: seed32,
+        difficulty: carved.difficulty,
+        clues: carved.clues
+      }
+
+    IF acceptsDifficulty(targetDiff, carved.difficulty) AND carved.clues >= MIN_CLUES_PER_DIFF[targetDiff]:
+      return {
+        puzzle81: carved.puzzle81,
+        seed32: seed32,
+        difficulty: carved.difficulty,
+        clues: carved.clues
+      }
+
+  IF ALLOW_BEST_SO_FAR_FALLBACK AND bestGlobal != null:
+    return bestGlobal
+
+  THROW "Generation failed within MAX_GEN_ATTEMPTS"
+
+========================================================
+END
+========================================================
+
+
+
+
+
