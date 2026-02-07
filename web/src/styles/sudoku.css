@@ -220,6 +220,20 @@ body.bg-off::before {
   background: none !important;
 }
 
+body.bg-off.theme-hard .title,
+body.bg-off.theme-hard .difficulty-label,
+body.bg-off.theme-samurai .title,
+body.bg-off.theme-samurai .difficulty-label {
+  color: #35542a;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+body.bg-off.theme-hard .title,
+body.bg-off.theme-samurai .title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

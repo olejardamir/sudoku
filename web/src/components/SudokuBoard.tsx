@@ -30,6 +30,7 @@ type BoardProps = {
   allowEditFixed: boolean;
   loadedGrid: Cell[][] | null;
   newGameSignal: number;
+  onGridUpdate: (grid: Cell[][], hasConflicts: boolean, isComplete: boolean) => void;
 };
 
 export type SudokuBoardHandle = {
@@ -38,7 +39,7 @@ export type SudokuBoardHandle = {
 };
 
 export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
-  ({ allowEditFixed, loadedGrid, newGameSignal }, ref) => {
+  ({ allowEditFixed, loadedGrid, newGameSignal, onGridUpdate }, ref) => {
   const [grid, setGrid] = useState<Cell[][]>(() => randomGrid());
   const [selectedBlock, setSelectedBlock] = useState<{
     row: number;
@@ -150,11 +151,16 @@ export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
   };
 
   const conflicts = getConflicts();
+  const isComplete = grid.every((row) => row.every((cell) => cell.value !== null));
 
   useImperativeHandle(ref, () => ({
     getGrid: () => grid,
     hasConflicts: () => getConflicts().size > 0
   }));
+
+  useEffect(() => {
+    onGridUpdate(grid, conflicts.size > 0, isComplete);
+  }, [grid, conflicts.size, isComplete, onGridUpdate]);
 
   return (
     <div className="sudoku-wrapper">

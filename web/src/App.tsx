@@ -35,6 +35,10 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const boardRef = useRef<SudokuBoardHandle | null>(null);
   const [isBackgroundOn, setIsBackgroundOn] = useState(true);
+  const [gridStatus, setGridStatus] = useState({
+    isComplete: false,
+    hasConflicts: false
+  });
 
   const toEngineDifficulty = (d: Difficulty): EngineDifficulty => {
     switch (d) {
@@ -126,17 +130,70 @@ export default function App() {
     );
   };
 
-  const buildSaveText = () => {
+  useEffect(() => {
+    if (
+      isStartView ||
+      isSolvedView ||
+      !gridStatus.isComplete ||
+      gridStatus.hasConflicts
+    ) {
+      return;
+    }
     const board = boardRef.current;
     if (!board) {
-      return null;
+      return;
     }
     const grid = board.getGrid();
+    const grid81 = new Uint8Array(81);
+    for (let r = 0; r < 9; r += 1) {
+      for (let c = 0; c < 9; c += 1) {
+        const cell = grid[r][c];
+        const i = r * 9 + c;
+        grid81[i] = cell.value ? cell.value : 0;
+      }
+    }
+    const solver = createDeterministicSolver();
+    if (!solver.loadGrid81(grid81)) {
+      return;
+    }
+    const res = solver.solveStopAtOne();
+    if (!res.solution81) {
+      return;
+    }
+    for (let i = 0; i < 81; i += 1) {
+      if (grid81[i] !== res.solution81[i]) {
+        return;
+      }
+    }
+    const cells: Cell[] = Array.from(res.solution81, (v) => ({
+      value: v > 0 ? v : null,
+      fixed: true
+    }));
+    const solvedGrid: Cell[][] = Array.from({ length: 9 }, (_, r) =>
+      cells.slice(r * 9, r * 9 + 9)
+    );
+    setLoadedGrid(solvedGrid);
+    setIsSolvedView(true);
+    setIsStartView(false);
+  }, [gridStatus, isStartView, isSolvedView]);
+
+  const getCurrentGrid = (): Cell[][] | null => {
+    if (boardRef.current) {
+      return boardRef.current.getGrid();
+    }
+    return loadedGrid;
+  };
+
+  const buildSaveText = () => {
+    const grid = getCurrentGrid();
+    if (!grid) {
+      return null;
+    }
     return grid
       .map((row) =>
         row
           .map((cell) =>
-            cell.value && cell.value >= 1 && cell.value <= 9
+            cell.value !== null && cell.value >= 1 && cell.value <= 9
               ? String(cell.value)
               : "."
           )
@@ -146,11 +203,10 @@ export default function App() {
   };
 
   const buildWinningSaveText = () => {
-    const board = boardRef.current;
-    if (!board) {
+    const grid = getCurrentGrid();
+    if (!grid) {
       return null;
     }
-    const grid = board.getGrid();
     const grid81 = new Uint8Array(81);
     for (let r = 0; r < 9; r += 1) {
       for (let c = 0; c < 9; c += 1) {
@@ -178,6 +234,26 @@ export default function App() {
           .join("")
       )
       .join("\n");
+  };
+
+  const buildMetadataSaveText = () => {
+    const grid = getCurrentGrid();
+    if (!grid) {
+      return null;
+    }
+    const puzzleLines = grid.map((row) =>
+      row
+        .map((cell) =>
+          cell.value !== null && cell.value >= 1 && cell.value <= 9
+            ? String(cell.value)
+            : "."
+        )
+        .join("")
+    );
+    const metaLines = grid.map((row) =>
+      row.map((cell) => (cell.fixed ? "1" : "0")).join("")
+    );
+    return [...puzzleLines, ...metaLines].join("\n");
   };
 
   const savePuzzle = async (text: string | null) => {
@@ -267,6 +343,9 @@ export default function App() {
           allowEditFixed={difficulty === "NEUTRAL"}
           loadedGrid={loadedGrid}
           newGameSignal={newGameSignal}
+          onGridUpdate={(grid, hasConflicts, isComplete) =>
+            setGridStatus({ hasConflicts, isComplete })
+          }
         />
       )}
       {!isSolvedView && !isStartView && (
@@ -311,22 +390,39 @@ export default function App() {
             return;
           }
           const text = await file.text();
-          const normalized = text.replace(/\s+/g, "");
+          const lines = text
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+          const hasMetadata = lines.length >= 18;
+          const puzzleLines = lines.slice(0, 9);
+          const metaLines = hasMetadata ? lines.slice(9, 18) : [];
           const grid81 = new Uint8Array(81);
+          const fixed81 = new Uint8Array(81);
           const cells: Cell[] = Array.from({ length: 81 }, (_, i) => {
-            const ch = normalized[i] ?? "";
+            const r = Math.floor(i / 9);
+            const c = i % 9;
+            const ch = puzzleLines[r]?.[c] ?? "";
+            const meta = metaLines[r]?.[c] ?? "";
+            const isFixed = hasMetadata ? meta === "1" : /^[1-9]$/.test(ch);
+            fixed81[i] = isFixed ? 1 : 0;
             if (/^[1-9]$/.test(ch)) {
               const value = Number(ch);
               grid81[i] = value;
-              return { value, fixed: true };
+              return { value, fixed: isFixed };
             }
             grid81[i] = 0;
-            return { value: null, fixed: false };
+            return { value: null, fixed: isFixed };
           });
           const grid: Cell[][] = Array.from({ length: 9 }, (_, r) =>
             cells.slice(r * 9, r * 9 + 9)
           );
-          setDifficulty(evaluateDifficulty(grid81));
+          const evalGrid = hasMetadata
+            ? Uint8Array.from(
+                grid81.map((v, i) => (fixed81[i] === 1 ? v : 0))
+              )
+            : grid81;
+          setDifficulty(evaluateDifficulty(evalGrid));
           setLoadedGrid(grid);
           setIsSolvedView(false);
           setIsStartView(false);
@@ -407,19 +503,19 @@ export default function App() {
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <h2>Save Puzzle</h2>
               <p className="modal-note">
-                Choose how to save. "Save Winning Puzzle" stores only numbers
-                that match the solved puzzle. "Save As-Is" keeps everything,
-                which may be unsolvable and will open as UNKNOWN.
+                Choose how to save. "With Metadata" adds 0/1 rows for static
+                cells so difficulty can be computed later. "As-Is" keeps
+                everything, which may be unsolvable and will open as UNKNOWN.
               </p>
               <div className="modal-actions">
                 <button
                   className="modal-ok"
                   onClick={async () => {
-                    await savePuzzle(buildWinningSaveText());
+                    await savePuzzle(buildMetadataSaveText());
                     setShowSaveModal(false);
                   }}
                 >
-                  Save Winning Puzzle
+                  With Metadata
                 </button>
                 <button
                   className="modal-as-is"
@@ -428,7 +524,7 @@ export default function App() {
                     setShowSaveModal(false);
                   }}
                 >
-                  Save As-Is
+                  As-Is
                 </button>
                 <button
                   className="modal-cancel"
