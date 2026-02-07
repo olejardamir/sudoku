@@ -199,6 +199,27 @@ input.cell:focus {
   margin-bottom: 8px;
 }
 
+.bg-toggle {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.bg-toggle:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+body.bg-off {
+  background-image: none !important;
+}
+
+body.bg-off::before {
+  background: none !important;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

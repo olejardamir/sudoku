@@ -34,6 +34,7 @@ export default function App() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const boardRef = useRef<SudokuBoardHandle | null>(null);
+  const [isBackgroundOn, setIsBackgroundOn] = useState(true);
 
   const toEngineDifficulty = (d: Difficulty): EngineDifficulty => {
     switch (d) {
@@ -225,6 +226,7 @@ export default function App() {
       "theme-start",
       "theme-neutral"
     );
+    document.body.classList.toggle("bg-off", !isBackgroundOn);
     if (isSolvedView) {
       document.body.classList.add("theme-victory");
       return;
@@ -248,11 +250,11 @@ export default function App() {
     if (difficulty === "NEUTRAL") {
       document.body.classList.add("theme-neutral");
     }
-  }, [difficulty, isSolvedView, isStartView]);
+  }, [difficulty, isSolvedView, isStartView, isBackgroundOn]);
 
   return (
     <div className="app">
-      <h1 className="title">Sudoku Master 2026</h1>
+      <h1 className="title">Sudoku Master</h1>
       {!isStartView && (
         <div className="difficulty-label">
           Difficulty: {difficulty === "NEUTRAL" ? "UNKNOWN" : difficulty}
@@ -289,6 +291,15 @@ export default function App() {
           setIsStartView(false);
         }}
       />
+      {!isStartView && (
+        <button
+          className="bg-toggle"
+          title="Toggle Background"
+          onClick={() => setIsBackgroundOn((v) => !v)}
+        >
+          {isBackgroundOn ? "Background: ON" : "Background: OFF"}
+        </button>
+      )}
       <input
         ref={fileInputRef}
         type="file"
