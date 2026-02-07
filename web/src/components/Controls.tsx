@@ -4,6 +4,7 @@ type Props = {
   isStartView: boolean;
   isSolvedView: boolean;
   onNewGame: () => void;
+  onLoad: () => void;
   onSolve: () => void;
 };
 
@@ -11,6 +12,7 @@ export const Controls: React.FC<Props> = ({
   isStartView,
   isSolvedView,
   onNewGame,
+  onLoad,
   onSolve
 }) => {
   return (
@@ -21,11 +23,11 @@ export const Controls: React.FC<Props> = ({
           <>
             {isStartView ? (
               <div className="secondary-buttons">
-                <button disabled>Load Puzzle</button>
+                <button onClick={onLoad}>Load Puzzle</button>
               </div>
             ) : (
               <>
-                <button disabled>Load Puzzle</button>
+                <button onClick={onLoad}>Load Puzzle</button>
                 <button disabled>Save Puzzle</button>
                 <button onClick={onSolve}>Solve Puzzle</button>
               </>

@@ -239,6 +239,10 @@ input.cell:focus {
   gap: 16px;
 }
 
+.file-input {
+  display: none;
+}
+
 .modal-actions button {
   width: 140px;
   color: #000000;
