@@ -4,6 +4,8 @@ import { SudokuBoard } from "./components/SudokuBoard";
 import type { SudokuBoardHandle } from "./components/SudokuBoard";
 import type { Cell, Difficulty } from "./components/SudokuBoard";
 import { Controls } from "./components/Controls";
+import { generateSudoku, Symmetry } from "./engine/generator";
+import { Difficulty as EngineDifficulty } from "./engine/solver";
 import "./styles/sudoku.css";
 import "./styles/easy.css";
 import "./styles/medium.css";
@@ -28,6 +30,34 @@ export default function App() {
   const [showConflictModal, setShowConflictModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const boardRef = useRef<SudokuBoardHandle | null>(null);
+
+  const toEngineDifficulty = (d: Difficulty): EngineDifficulty => {
+    switch (d) {
+      case "EASY":
+        return EngineDifficulty.EASY;
+      case "MEDIUM":
+        return EngineDifficulty.MEDIUM;
+      case "HARD":
+        return EngineDifficulty.HARD;
+      case "SAMURAI":
+      default:
+        return EngineDifficulty.SAMURAI;
+    }
+  };
+
+  const fromEngineDifficulty = (d: EngineDifficulty): Difficulty => {
+    switch (d) {
+      case EngineDifficulty.EASY:
+        return "EASY";
+      case EngineDifficulty.MEDIUM:
+        return "MEDIUM";
+      case EngineDifficulty.HARD:
+        return "HARD";
+      case EngineDifficulty.SAMURAI:
+      default:
+        return "SAMURAI";
+    }
+  };
 
   const buildSaveText = () => {
     const board = boardRef.current;
@@ -219,11 +249,30 @@ export default function App() {
                 <button
                   className="modal-ok"
                   onClick={() => {
-                    setDifficulty(pendingDifficulty);
-                    setIsSolvedView(false);
-                    setIsStartView(false);
-                    setNewGameSignal((v) => v + 1);
-                    setShowNewGameModal(false);
+                    try {
+                      const result = generateSudoku(
+                        toEngineDifficulty(pendingDifficulty),
+                        Symmetry.NONE,
+                        Date.now() >>> 0
+                      );
+                      const cells: Cell[] = Array.from(
+                        result.puzzle81,
+                        (v) => ({
+                          value: v > 0 ? v : null,
+                          fixed: v > 0
+                        })
+                      );
+                      const grid: Cell[][] = Array.from({ length: 9 }, (_, r) =>
+                        cells.slice(r * 9, r * 9 + 9)
+                      );
+                      setLoadedGrid(grid);
+                      setDifficulty(fromEngineDifficulty(result.difficulty));
+                      setIsSolvedView(false);
+                      setIsStartView(false);
+                      setShowNewGameModal(false);
+                    } catch (err) {
+                      console.error(err);
+                    }
                   }}
                 >
                   OK
