@@ -79,6 +79,10 @@ body.theme-samurai .difficulty {
   color: #ffffff;
 }
 
+body.theme-samurai .difficulty-label {
+  color: #ffffff;
+}
+
 body.theme-samurai button {
   background: linear-gradient(
     to bottom,

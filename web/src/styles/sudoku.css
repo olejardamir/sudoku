@@ -194,6 +194,11 @@ input.cell:focus {
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
 
+.difficulty-label {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -242,6 +247,7 @@ input.cell:focus {
   display: flex;
   justify-content: center;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .file-input {
@@ -249,7 +255,7 @@ input.cell:focus {
 }
 
 .modal-actions button {
-  width: 140px;
+  width: 170px;
   color: #000000;
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: #ffffff;
@@ -263,7 +269,12 @@ input.cell:focus {
   background: #f6c5c5 !important;
 }
 
+.modal-as-is {
+  background: #e7eef9 !important;
+}
+
 .modal .modal-ok,
-.modal .modal-cancel {
+.modal .modal-cancel,
+.modal .modal-as-is {
   background-clip: padding-box;
 }

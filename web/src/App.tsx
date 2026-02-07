@@ -26,7 +26,6 @@ export default function App() {
   });
   const [pendingDifficulty, setPendingDifficulty] =
     useState<Difficulty>(difficulty);
-  const [solveSignal, setSolveSignal] = useState(0);
   const [newGameSignal, setNewGameSignal] = useState(0);
   const [loadedGrid, setLoadedGrid] = useState<Cell[][] | null>(null);
   const [isSolvedView, setIsSolvedView] = useState(false);
@@ -95,6 +94,37 @@ export default function App() {
     return fromEngineDifficulty(diff.difficulty);
   };
 
+  const solveFromFixed = (): Cell[][] | null => {
+    const board = boardRef.current;
+    if (!board) {
+      return null;
+    }
+    const grid = board.getGrid();
+    const grid81 = new Uint8Array(81);
+    for (let r = 0; r < 9; r += 1) {
+      for (let c = 0; c < 9; c += 1) {
+        const cell = grid[r][c];
+        const i = r * 9 + c;
+        grid81[i] = cell.fixed && cell.value ? cell.value : 0;
+      }
+    }
+    const solver = createDeterministicSolver();
+    if (!solver.loadGrid81(grid81)) {
+      return null;
+    }
+    const res = solver.solveStopAtOne();
+    if (!res.solution81) {
+      return null;
+    }
+    const cells: Cell[] = Array.from(res.solution81, (v) => ({
+      value: v > 0 ? v : null,
+      fixed: true
+    }));
+    return Array.from({ length: 9 }, (_, r) =>
+      cells.slice(r * 9, r * 9 + 9)
+    );
+  };
+
   const buildSaveText = () => {
     const board = boardRef.current;
     if (!board) {
@@ -114,8 +144,42 @@ export default function App() {
       .join("\n");
   };
 
-  const savePuzzle = async () => {
-    const text = buildSaveText();
+  const buildWinningSaveText = () => {
+    const board = boardRef.current;
+    if (!board) {
+      return null;
+    }
+    const grid = board.getGrid();
+    const grid81 = new Uint8Array(81);
+    for (let r = 0; r < 9; r += 1) {
+      for (let c = 0; c < 9; c += 1) {
+        const cell = grid[r][c];
+        const i = r * 9 + c;
+        grid81[i] = cell.fixed && cell.value ? cell.value : 0;
+      }
+    }
+    const solver = createDeterministicSolver();
+    if (!solver.loadGrid81(grid81)) {
+      return null;
+    }
+    const res = solver.solveStopAtOne();
+    if (!res.solution81) {
+      return null;
+    }
+    return grid
+      .map((row, r) =>
+        row
+          .map((cell, c) => {
+            const i = r * 9 + c;
+            const solved = res.solution81[i];
+            return cell.value === solved ? String(solved) : ".";
+          })
+          .join("")
+      )
+      .join("\n");
+  };
+
+  const savePuzzle = async (text: string | null) => {
     if (text === null) {
       return;
     }
@@ -189,6 +253,11 @@ export default function App() {
   return (
     <div className="app">
       <h1 className="title">Sudoku Master 2026</h1>
+      {!isStartView && (
+        <div className="difficulty-label">
+          Difficulty: {difficulty === "NEUTRAL" ? "UNKNOWN" : difficulty}
+        </div>
+      )}
       {isSolvedView && <div className="difficulty victory-text">VICTORY</div>}
       {!isStartView && (
         <SudokuBoard
@@ -196,7 +265,6 @@ export default function App() {
           allowEditFixed={difficulty === "NEUTRAL"}
           loadedGrid={loadedGrid}
           newGameSignal={newGameSignal}
-          solveSignal={solveSignal}
         />
       )}
       {!isSolvedView && !isStartView && (
@@ -212,7 +280,11 @@ export default function App() {
         onLoad={() => fileInputRef.current?.click()}
         onSave={() => setShowSaveModal(true)}
         onSolve={() => {
-          setSolveSignal((v) => v + 1);
+          const solved = solveFromFixed();
+          if (!solved) {
+            return;
+          }
+          setLoadedGrid(solved);
           setIsSolvedView(true);
           setIsStartView(false);
         }}
@@ -324,18 +396,28 @@ export default function App() {
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <h2>Save Puzzle</h2>
               <p className="modal-note">
-                Difficulty will be relevant to the saved puzzle (not the chosen
-                difficulty).
+                Choose how to save. "Save Winning Puzzle" stores only numbers
+                that match the solved puzzle. "Save As-Is" keeps everything,
+                which may be unsolvable and will open as UNKNOWN.
               </p>
               <div className="modal-actions">
                 <button
                   className="modal-ok"
                   onClick={async () => {
-                    await savePuzzle();
+                    await savePuzzle(buildWinningSaveText());
                     setShowSaveModal(false);
                   }}
                 >
-                  OK
+                  Save Winning Puzzle
+                </button>
+                <button
+                  className="modal-as-is"
+                  onClick={async () => {
+                    await savePuzzle(buildSaveText());
+                    setShowSaveModal(false);
+                  }}
+                >
+                  Save As-Is
                 </button>
                 <button
                   className="modal-cancel"

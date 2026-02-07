@@ -30,7 +30,6 @@ type BoardProps = {
   allowEditFixed: boolean;
   loadedGrid: Cell[][] | null;
   newGameSignal: number;
-  solveSignal: number;
 };
 
 export type SudokuBoardHandle = {
@@ -39,7 +38,7 @@ export type SudokuBoardHandle = {
 };
 
 export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
-  ({ allowEditFixed, loadedGrid, newGameSignal, solveSignal }, ref) => {
+  ({ allowEditFixed, loadedGrid, newGameSignal }, ref) => {
   const [grid, setGrid] = useState<Cell[][]>(() => randomGrid());
   const [selectedBlock, setSelectedBlock] = useState<{
     row: number;
@@ -59,20 +58,6 @@ export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
       document.removeEventListener("mousedown", handleMouseDown);
     };
   }, []);
-
-  useEffect(() => {
-    if (solveSignal === 0) {
-      return;
-    }
-    setGrid((prev) =>
-      prev.map((row) =>
-        row.map((cell) => ({
-          ...cell,
-          value: Math.floor(Math.random() * 9) + 1
-        }))
-      )
-    );
-  }, [solveSignal]);
 
   useEffect(() => {
     if (newGameSignal === 0) {

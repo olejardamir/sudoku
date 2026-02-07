@@ -21,7 +21,9 @@ export const Controls: React.FC<Props> = ({
     <div className={`controls ${isStartView ? "start" : ""}`}>
       <div className="buttons">
         <button onClick={onNewGame}>New Puzzle</button>
-        {!isSolvedView && (
+        {isSolvedView ? (
+          <button onClick={onLoad}>Load Puzzle</button>
+        ) : (
           <>
             {isStartView ? (
               <div className="secondary-buttons">

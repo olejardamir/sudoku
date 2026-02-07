@@ -79,6 +79,10 @@ body.theme-hard .difficulty {
   color: #ffffff;
 }
 
+body.theme-hard .difficulty-label {
+  color: #ffffff;
+}
+
 body.theme-hard button {
   background: linear-gradient(
     to bottom,
