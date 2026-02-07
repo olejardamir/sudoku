@@ -1,0 +1,108 @@
+.app {
+  padding: 20px;
+  font-family: sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.title {
+  margin: 0 0 24px 0;
+  font-size: 56px;
+  letter-spacing: 2px;
+  width: 720px;
+  text-align: center;
+}
+
+.controls {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  width: 720px;
+}
+
+.buttons {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: center;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(9, 80px);
+  grid-template-rows: repeat(9, 80px);
+  gap: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+.cell {
+  width: 80px;
+  height: 80px;
+  text-align: center;
+  font-size: 36px;
+  border: 1px solid #333;
+  box-sizing: border-box;
+}
+
+.cell.fixed {
+  background: #eee;
+  font-weight: bold;
+}
+
+.cell.block-highlight {
+  background: #e6d6ff;
+}
+
+.cell.fixed.block-highlight {
+  background: #d6c2ff;
+}
+
+.sudoku-wrapper {
+  display: grid;
+  grid-template-columns: auto;
+  grid-template-rows: auto;
+  gap: 0;
+}
+
+.cell:nth-child(9n + 1),
+.cell:nth-child(9n + 4),
+.cell:nth-child(9n + 7) {
+  border-left-width: 3px;
+}
+
+.cell:nth-child(9n) {
+  border-right-width: 3px;
+}
+
+.cell:nth-child(-n + 9),
+.cell:nth-child(n + 28):nth-child(-n + 36),
+.cell:nth-child(n + 55):nth-child(-n + 63) {
+  border-top-width: 3px;
+}
+
+.cell:nth-child(n + 73):nth-child(-n + 81) {
+  border-bottom-width: 3px;
+}
+
+.difficulty {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  justify-content: center;
+  width: 720px;
+}
+
+.notes {
+  width: 720px;
+  font-size: 16px;
+  padding: 10px;
+  height: 200px;
+  resize: vertical;
+  box-sizing: border-box;
+}

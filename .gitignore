@@ -2,3 +2,78 @@
 tests/node_modules/.bin/
 
 tests/node_modules/
+
+
+# ----------------------------
+# Node / npm
+# ----------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ----------------------------
+# Build outputs
+# ----------------------------
+dist/
+build/
+out/
+
+# TypeScript incremental builds
+*.tsbuildinfo
+
+# ----------------------------
+# Vite / frontend
+# ----------------------------
+web/dist/
+web/.vite/
+
+# ----------------------------
+# Environment files
+# ----------------------------
+.env
+.env.*
+!.env.example
+
+# ----------------------------
+# OS / editor noise
+# ----------------------------
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+
+# Vim / swap
+*.swp
+*.swo
+
+# ----------------------------
+# Logs
+# ----------------------------
+logs/
+*.log
+
+# ----------------------------
+# Coverage / testing
+# ----------------------------
+coverage/
+
+# ----------------------------
+# Temporary / misc
+# ----------------------------
+.tmp/
+.temp/
+.cache/
+
+# ----------------------------
+# Optional: generated data
+# (keep if you regenerate these)
+# ----------------------------
+tests/*.csv
+
