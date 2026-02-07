@@ -5,7 +5,9 @@
 body.theme-medium {
   --panel-bg: rgba(255, 255, 255, 0.92);
   --panel-border: rgba(255, 255, 255, 0.55);
-  --panel-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  --panel-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
 
   --cell-bg: rgba(255, 255, 255, 0.95);
   --cell-fixed-bg: rgba(245, 240, 220, 0.95);
@@ -14,8 +16,8 @@ body.theme-medium {
 
   --accent: #4b6b3c;
   --accent-strong: #35542a;
-  --grid-line: rgba(0, 0, 0, 0.35);
-  --grid-line-strong: rgba(0, 0, 0, 0.7);
+  --grid-line: rgba(0, 0, 0, 0.58);
+  --grid-line-strong: rgba(0, 0, 0, 0.78);
 
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 
@@ -49,12 +51,12 @@ body.theme-medium #root {
   max-width: 980px;
   padding: 28px;
 
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px) brightness(1.14);
-  -webkit-backdrop-filter: blur(18px) brightness(1.14);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 
   border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: var(--panel-shadow);
 
   text-align: center;
@@ -63,7 +65,8 @@ body.theme-medium #root {
 body.theme-medium .title {
   margin: 0 0 18px;
   font-size: 2.2rem;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--accent-strong);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
@@ -76,34 +79,23 @@ body.theme-medium .controls {
 }
 
 body.theme-medium button {
-  background: linear-gradient(
-    to bottom,
-    #ffffff,
-    #f1f1f1
-  );
-  color: #222;
+  background: #f5f5f5;
+  color: #333;
   border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid #ccc;
   padding: 10px 16px;
   font-size: 0.95rem;
   cursor: pointer;
-
-  box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-
-  transition: all 0.2s ease;
+  box-shadow: none;
+  transition: background-color 0.15s ease;
 }
 
 body.theme-medium button:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 6px 14px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: #eaeaea;
 }
 
 body.theme-medium button:active {
-  transform: translateY(0);
+  background: #ddd;
 }
 
 body.theme-medium .grid {
@@ -113,26 +105,30 @@ body.theme-medium .grid {
 }
 
 body.theme-medium .cell {
-  background: rgba(255, 255, 255, 0.16);
-  color: #222;
+  background: rgba(255, 255, 255, 0.92);
+  color: #3a5f9b;
+  font-weight: 500;
+}
+
+body.theme-medium .cell[readonly] {
+  color: #1f1f1f;
   font-weight: 600;
 }
 
-body.theme-medium .cell.fixed {
-  background: rgba(255, 255, 255, 0.5);
-  color: #333;
-  font-weight: 700;
+body.theme-medium .cell:not([readonly]):hover {
+  background: rgba(0, 0, 0, 0.04);
 }
 
-body.theme-medium .cell:not(.fixed):hover {
-  background: rgba(255, 255, 255, 1);
-}
-
+body.theme-medium .cell:focus,
 body.theme-medium .cell.block-highlight {
-  background: rgba(255, 255, 255, 1);
-  box-shadow: none;
+  background: rgba(70, 120, 200, 0.12);
 }
 
-body.theme-medium .cell.fixed.block-highlight {
-  background: rgba(255, 255, 255, 0.5);
+body.theme-medium .cell[readonly].block-highlight {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+body.theme-medium .notes {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }

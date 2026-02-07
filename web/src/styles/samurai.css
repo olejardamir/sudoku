@@ -63,9 +63,9 @@ body.theme-samurai #root {
 body.theme-samurai .title {
   margin: 0 0 18px;
   font-size: 2.2rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: #ffffff;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 body.theme-samurai .controls {

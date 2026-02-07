@@ -3,7 +3,7 @@
 ================================ */
 
 body.theme-hard {
-  --panel-bg: rgba(255, 255, 255, 0.92);
+  --panel-bg: rgba(255, 255, 255, 0.95);
   --panel-border: rgba(255, 255, 255, 0.55);
   --panel-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
 
@@ -14,8 +14,8 @@ body.theme-hard {
 
   --accent: #4b6b3c;
   --accent-strong: #35542a;
-  --grid-line: rgba(0, 0, 0, 0.35);
-  --grid-line-strong: rgba(0, 0, 0, 0.7);
+  --grid-line: rgba(0, 0, 0, 0.42);
+  --grid-line-strong: rgba(0, 0, 0, 0.8);
 
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 
@@ -38,8 +38,8 @@ body.theme-hard::before {
   position: fixed;
   inset: 0;
   background: linear-gradient(
-    rgba(0, 0, 0, 0.35),
-    rgba(0, 0, 0, 0.25)
+    rgba(0, 0, 0, 0.45),
+    rgba(0, 0, 0, 0.35)
   );
   z-index: -1;
 }
@@ -49,9 +49,9 @@ body.theme-hard #root {
   max-width: 980px;
   padding: 28px;
 
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px) brightness(1.14);
-  -webkit-backdrop-filter: blur(18px) brightness(1.14);
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(20px) brightness(1.12);
+  -webkit-backdrop-filter: blur(20px) brightness(1.12);
 
   border-radius: 0;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -63,9 +63,9 @@ body.theme-hard #root {
 body.theme-hard .title {
   margin: 0 0 18px;
   font-size: 2.2rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: #ffffff;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 body.theme-hard .controls {
@@ -80,34 +80,25 @@ body.theme-hard .difficulty {
 }
 
 body.theme-hard button {
-  background: linear-gradient(
-    to bottom,
-    #ffffff,
-    #f1f1f1
-  );
+  background: #f2f2f2;
   color: #222;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
   padding: 10px 16px;
   font-size: 0.95rem;
   cursor: pointer;
 
-  box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-
-  transition: all 0.2s ease;
+  box-shadow: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 body.theme-hard button:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 6px 14px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: #e6e6e6;
+  transform: none;
 }
 
 body.theme-hard button:active {
-  transform: translateY(0);
+  background: #ddd;
 }
 
 body.theme-hard .grid {
@@ -117,19 +108,19 @@ body.theme-hard .grid {
 }
 
 body.theme-hard .cell {
-  background: rgba(255, 255, 255, 0.16);
-  color: #222;
+  background: rgba(255, 255, 255, 0.14);
+  color: #1f1f1f;
   font-weight: 600;
 }
 
 body.theme-hard .cell.fixed {
-  background: rgba(255, 255, 255, 0.5);
-  color: #333;
+  background: rgba(255, 255, 255, 0.55);
+  color: #111;
   font-weight: 700;
 }
 
 body.theme-hard .cell:not(.fixed):hover {
-  background: rgba(255, 255, 255, 1);
+  background: rgba(255, 255, 255, 0.75);
 }
 
 body.theme-hard .cell.block-highlight {
