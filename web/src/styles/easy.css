@@ -1,0 +1,138 @@
+/* ================================
+   EASY THEME (SCOPED)
+================================ */
+
+body.theme-easy {
+  --panel-bg: rgba(255, 255, 255, 0.92);
+  --panel-border: rgba(255, 255, 255, 0.55);
+  --panel-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+
+  --cell-bg: rgba(255, 255, 255, 0.95);
+  --cell-fixed-bg: rgba(245, 240, 220, 0.95);
+  --cell-hover-bg: rgba(210, 225, 240, 0.9);
+  --cell-selected-bg: rgba(160, 200, 235, 0.95);
+
+  --accent: #4b6b3c;
+  --accent-strong: #35542a;
+  --grid-line: rgba(0, 0, 0, 0.35);
+  --grid-line-strong: rgba(0, 0, 0, 0.7);
+
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+
+  background-image: url("/EASY.png");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+
+  padding-top: 120px;
+}
+
+body.theme-easy::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    rgba(0, 0, 0, 0.35),
+    rgba(0, 0, 0, 0.25)
+  );
+  z-index: -1;
+}
+
+body.theme-easy #root {
+  width: 100%;
+  max-width: 980px;
+  padding: 28px;
+
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) brightness(1.14);
+  -webkit-backdrop-filter: blur(18px) brightness(1.14);
+
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--panel-shadow);
+
+  text-align: center;
+}
+
+body.theme-easy .title {
+  margin: 0 0 18px;
+  font-size: 2.2rem;
+  letter-spacing: 0.04em;
+  color: var(--accent-strong);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+body.theme-easy .controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+body.theme-easy button {
+  background: linear-gradient(
+    to bottom,
+    #ffffff,
+    #f1f1f1
+  );
+  color: #222;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  cursor: pointer;
+
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+  transition: all 0.2s ease;
+}
+
+body.theme-easy button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.theme-easy button:active {
+  transform: translateY(0);
+}
+
+body.theme-easy .grid {
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+body.theme-easy .cell {
+  background: rgba(255, 255, 255, 0.16);
+  color: #222;
+  font-weight: 600;
+}
+
+body.theme-easy .cell.fixed {
+  background: rgba(255, 255, 255, 0.5);
+  color: #333;
+  font-weight: 700;
+}
+
+body.theme-easy .cell:not(.fixed):hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+body.theme-easy .cell.block-highlight {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: none;
+}
+
+body.theme-easy .cell.fixed.block-highlight {
+  background: rgba(255, 255, 255, 0.5);
+}
