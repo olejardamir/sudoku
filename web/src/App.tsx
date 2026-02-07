@@ -8,13 +8,19 @@ import "./styles/medium.css";
 import "./styles/hard.css";
 import "./styles/samurai.css";
 import "./styles/victory.css";
+import "./styles/start.css";
 
 export default function App() {
   const [difficulty, setDifficulty] = useState<Difficulty>(() => {
     return (localStorage.getItem("difficulty") as Difficulty) || "EASY";
   });
+  const [pendingDifficulty, setPendingDifficulty] =
+    useState<Difficulty>(difficulty);
   const [solveSignal, setSolveSignal] = useState(0);
+  const [newGameSignal, setNewGameSignal] = useState(0);
   const [isSolvedView, setIsSolvedView] = useState(false);
+  const [isStartView, setIsStartView] = useState(true);
+  const [showNewGameModal, setShowNewGameModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("difficulty", difficulty);
@@ -26,10 +32,15 @@ export default function App() {
       "theme-medium",
       "theme-hard",
       "theme-samurai",
-      "theme-victory"
+      "theme-victory",
+      "theme-start"
     );
     if (isSolvedView) {
       document.body.classList.add("theme-victory");
+      return;
+    }
+    if (isStartView) {
+      document.body.classList.add("theme-start");
       return;
     }
     if (difficulty === "EASY") {
@@ -44,7 +55,7 @@ export default function App() {
     if (difficulty === "SAMURAI") {
       document.body.classList.add("theme-samurai");
     }
-  }, [difficulty, isSolvedView]);
+  }, [difficulty, isSolvedView, isStartView]);
 
   return (
     <div className="app">
@@ -58,25 +69,82 @@ export default function App() {
               <input
                 type="radio"
                 checked={difficulty === d}
-                onChange={() => setDifficulty(d)}
+                onChange={() => {
+                  setDifficulty(d);
+                  setIsStartView(false);
+                }}
               />
               {d}
             </label>
           ))}
         </div>
       )}
-      <SudokuBoard solveSignal={solveSignal} />
-      {!isSolvedView && (
+      {!isStartView && (
+        <SudokuBoard
+          newGameSignal={newGameSignal}
+          solveSignal={solveSignal}
+        />
+      )}
+      {!isSolvedView && !isStartView && (
         <textarea className="notes" placeholder="Notes..." rows={4} />
       )}
       <Controls
+        isStartView={isStartView}
         isSolvedView={isSolvedView}
-        onNewGame={() => window.location.reload()}
+        onNewGame={() => {
+          setPendingDifficulty(difficulty);
+          setShowNewGameModal(true);
+        }}
         onSolve={() => {
           setSolveSignal((v) => v + 1);
           setIsSolvedView(true);
+          setIsStartView(false);
         }}
       />
+      {showNewGameModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowNewGameModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Select difficulty and press OK</h2>
+            <div className="difficulty">
+              {(["EASY", "MEDIUM", "HARD", "SAMURAI"] as Difficulty[]).map(
+                (d) => (
+                  <label key={d}>
+                    <input
+                      type="radio"
+                      checked={pendingDifficulty === d}
+                      onChange={() => setPendingDifficulty(d)}
+                    />
+                    {d}
+                  </label>
+                )
+              )}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="modal-ok"
+                onClick={() => {
+                  setDifficulty(pendingDifficulty);
+                  setIsSolvedView(false);
+                  setIsStartView(false);
+                  setNewGameSignal((v) => v + 1);
+                  setShowNewGameModal(false);
+                }}
+              >
+                OK
+              </button>
+              <button
+                className="modal-cancel"
+                onClick={() => setShowNewGameModal(false)}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

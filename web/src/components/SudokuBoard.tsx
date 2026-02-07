@@ -21,10 +21,14 @@ function randomGrid(): Cell[][] {
 }
 
 type BoardProps = {
+  newGameSignal: number;
   solveSignal: number;
 };
 
-export const SudokuBoard: React.FC<BoardProps> = ({ solveSignal }) => {
+export const SudokuBoard: React.FC<BoardProps> = ({
+  newGameSignal,
+  solveSignal
+}) => {
   const [grid, setGrid] = useState<Cell[][]>(() => randomGrid());
   const [selectedBlock, setSelectedBlock] = useState<{
     row: number;
@@ -58,6 +62,14 @@ export const SudokuBoard: React.FC<BoardProps> = ({ solveSignal }) => {
       )
     );
   }, [solveSignal]);
+
+  useEffect(() => {
+    if (newGameSignal === 0) {
+      return;
+    }
+    setGrid(randomGrid());
+    setSelectedBlock(null);
+  }, [newGameSignal]);
 
   const updateCell = (r: number, c: number, value: number | null) => {
     setGrid((prev) =>
