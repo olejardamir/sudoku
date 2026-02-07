@@ -69,6 +69,72 @@ export const SudokuBoard: React.FC<BoardProps> = ({ solveSignal }) => {
     );
   };
 
+  const getConflicts = () => {
+    const conflicts = new Set<string>();
+
+    for (let r = 0; r < 9; r += 1) {
+      const seen = new Map<number, number[]>();
+      for (let c = 0; c < 9; c += 1) {
+        const v = grid[r][c].value;
+        if (v === null) {
+          continue;
+        }
+        const list = seen.get(v) ?? [];
+        list.push(c);
+        seen.set(v, list);
+      }
+      seen.forEach((cols) => {
+        if (cols.length > 1) {
+          cols.forEach((c) => conflicts.add(`${r}-${c}`));
+        }
+      });
+    }
+
+    for (let c = 0; c < 9; c += 1) {
+      const seen = new Map<number, number[]>();
+      for (let r = 0; r < 9; r += 1) {
+        const v = grid[r][c].value;
+        if (v === null) {
+          continue;
+        }
+        const list = seen.get(v) ?? [];
+        list.push(r);
+        seen.set(v, list);
+      }
+      seen.forEach((rows) => {
+        if (rows.length > 1) {
+          rows.forEach((r) => conflicts.add(`${r}-${c}`));
+        }
+      });
+    }
+
+    for (let br = 0; br < 3; br += 1) {
+      for (let bc = 0; bc < 3; bc += 1) {
+        const seen = new Map<number, Array<{ r: number; c: number }>>();
+        for (let r = br * 3; r < br * 3 + 3; r += 1) {
+          for (let c = bc * 3; c < bc * 3 + 3; c += 1) {
+            const v = grid[r][c].value;
+            if (v === null) {
+              continue;
+            }
+            const list = seen.get(v) ?? [];
+            list.push({ r, c });
+            seen.set(v, list);
+          }
+        }
+        seen.forEach((cells) => {
+          if (cells.length > 1) {
+            cells.forEach(({ r, c }) => conflicts.add(`${r}-${c}`));
+          }
+        });
+      }
+    }
+
+    return conflicts;
+  };
+
+  const conflicts = getConflicts();
+
   return (
     <div className="sudoku-wrapper">
       <div className="grid" ref={gridRef}>
@@ -82,6 +148,7 @@ export const SudokuBoard: React.FC<BoardProps> = ({ solveSignal }) => {
                 Math.floor(r / 3) === selectedBlock.row &&
                 Math.floor(c / 3) === selectedBlock.col
               }
+              isInvalid={conflicts.has(`${r}-${c}`)}
               onChange={(v) => updateCell(r, c, v)}
               onFocus={() =>
                 setSelectedBlock({

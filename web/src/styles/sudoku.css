@@ -152,6 +152,14 @@ input.cell:focus {
   font-weight: bold;
 }
 
+.grid .cell.invalid {
+  color: #c31717;
+}
+
+.grid .cell.fixed.invalid {
+  color: #c31717;
+}
+
 .cell.block-highlight {
   background: #e6d6ff;
 }

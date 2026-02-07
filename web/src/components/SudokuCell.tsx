@@ -4,6 +4,7 @@ import type { Cell } from "./SudokuBoard";
 type Props = {
   cell: Cell;
   isInSelectedBlock: boolean;
+  isInvalid: boolean;
   onChange: (value: number | null) => void;
   onFocus: () => void;
 };
@@ -11,6 +12,7 @@ type Props = {
 export const SudokuCell: React.FC<Props> = ({
   cell,
   isInSelectedBlock,
+  isInvalid,
   onChange,
   onFocus
 }) => {
@@ -18,7 +20,7 @@ export const SudokuCell: React.FC<Props> = ({
     <input
       className={`cell ${cell.fixed ? "fixed" : ""} ${
         isInSelectedBlock ? "block-highlight" : ""
-      }`}
+      } ${isInvalid ? "invalid" : ""}`}
       value={cell.value ?? ""}
       readOnly={cell.fixed}
       onFocus={onFocus}
