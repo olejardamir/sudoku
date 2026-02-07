@@ -119,25 +119,7 @@ export default function App() {
   return (
     <div className="app">
       <h1 className="title">Sudoku Master 2026</h1>
-      {isSolvedView ? (
-        <div className="difficulty victory-text">VICTORY</div>
-      ) : (
-        <div className="difficulty">
-          {(["EASY", "MEDIUM", "HARD", "SAMURAI"] as Difficulty[]).map((d) => (
-            <label key={d}>
-              <input
-                type="radio"
-                checked={difficulty === d}
-                onChange={() => {
-                  setDifficulty(d);
-                  setIsStartView(false);
-                }}
-              />
-              {d}
-            </label>
-          ))}
-        </div>
-      )}
+      {isSolvedView && <div className="difficulty victory-text">VICTORY</div>}
       {!isStartView && (
         <SudokuBoard
           ref={boardRef}
