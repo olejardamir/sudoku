@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SudokuBoard } from "./components/SudokuBoard";
 import type { Cell, Difficulty } from "./components/SudokuBoard";
 import { Controls } from "./components/Controls";
@@ -142,50 +143,52 @@ export default function App() {
           e.target.value = "";
         }}
       />
-      {showNewGameModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowNewGameModal(false)}
-        >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Select difficulty and press OK</h2>
-            <div className="difficulty">
-              {(["EASY", "MEDIUM", "HARD", "SAMURAI"] as Difficulty[]).map(
-                (d) => (
-                  <label key={d}>
-                    <input
-                      type="radio"
-                      checked={pendingDifficulty === d}
-                      onChange={() => setPendingDifficulty(d)}
-                    />
-                    {d}
-                  </label>
-                )
-              )}
+      {showNewGameModal &&
+        createPortal(
+          <div
+            className="modal-overlay"
+            onClick={() => setShowNewGameModal(false)}
+          >
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Select difficulty and press OK</h2>
+              <div className="difficulty">
+                {(["EASY", "MEDIUM", "HARD", "SAMURAI"] as Difficulty[]).map(
+                  (d) => (
+                    <label key={d}>
+                      <input
+                        type="radio"
+                        checked={pendingDifficulty === d}
+                        onChange={() => setPendingDifficulty(d)}
+                      />
+                      {d}
+                    </label>
+                  )
+                )}
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="modal-ok"
+                  onClick={() => {
+                    setDifficulty(pendingDifficulty);
+                    setIsSolvedView(false);
+                    setIsStartView(false);
+                    setNewGameSignal((v) => v + 1);
+                    setShowNewGameModal(false);
+                  }}
+                >
+                  OK
+                </button>
+                <button
+                  className="modal-cancel"
+                  onClick={() => setShowNewGameModal(false)}
+                >
+                  CANCEL
+                </button>
+              </div>
             </div>
-            <div className="modal-actions">
-              <button
-                className="modal-ok"
-                onClick={() => {
-                  setDifficulty(pendingDifficulty);
-                  setIsSolvedView(false);
-                  setIsStartView(false);
-                  setNewGameSignal((v) => v + 1);
-                  setShowNewGameModal(false);
-                }}
-              >
-                OK
-              </button>
-              <button
-                className="modal-cancel"
-                onClick={() => setShowNewGameModal(false)}
-              >
-                CANCEL
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
