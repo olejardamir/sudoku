@@ -5,7 +5,12 @@ import type { SudokuBoardHandle } from "./components/SudokuBoard";
 import type { Cell, Difficulty } from "./components/SudokuBoard";
 import { Controls } from "./components/Controls";
 import { generateSudoku, Symmetry } from "./engine/generator";
-import { Difficulty as EngineDifficulty } from "./engine/solver";
+import {
+  Difficulty as EngineDifficulty,
+  SolveStatus,
+  SudokuSolver,
+  generateMasks
+} from "./engine/solver";
 import "./styles/sudoku.css";
 import "./styles/easy.css";
 import "./styles/medium.css";
@@ -13,6 +18,7 @@ import "./styles/hard.css";
 import "./styles/samurai.css";
 import "./styles/victory.css";
 import "./styles/start.css";
+import "./styles/neutral.css";
 
 export default function App() {
   const [difficulty, setDifficulty] = useState<Difficulty>(() => {
@@ -27,7 +33,6 @@ export default function App() {
   const [isStartView, setIsStartView] = useState(true);
   const [showNewGameModal, setShowNewGameModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [showConflictModal, setShowConflictModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const boardRef = useRef<SudokuBoardHandle | null>(null);
 
@@ -40,8 +45,10 @@ export default function App() {
       case "HARD":
         return EngineDifficulty.HARD;
       case "SAMURAI":
-      default:
         return EngineDifficulty.SAMURAI;
+      case "NEUTRAL":
+      default:
+        return EngineDifficulty.MEDIUM;
     }
   };
 
@@ -57,6 +64,35 @@ export default function App() {
       default:
         return "SAMURAI";
     }
+  };
+
+  const createDeterministicSolver = () => {
+    const solver = new SudokuSolver(generateMasks());
+    solver.clearLimits();
+    solver.enableHeavyRules(true);
+    solver.enableRandomMRVTieBreak(false);
+    solver.enableRandomValueChoice(false);
+    return solver;
+  };
+
+  const evaluateDifficulty = (grid81: Uint8Array): Difficulty => {
+    const solverUniq = createDeterministicSolver();
+    if (!solverUniq.loadGrid81(grid81)) {
+      return "NEUTRAL";
+    }
+    const uniq = solverUniq.countSolutions(2);
+    if (uniq.status !== SolveStatus.UNIQUE) {
+      return "NEUTRAL";
+    }
+    const solverDiff = createDeterministicSolver();
+    if (!solverDiff.loadGrid81(grid81)) {
+      return "NEUTRAL";
+    }
+    const diff = solverDiff.solveStopAtOne();
+    if (diff.status !== SolveStatus.UNIQUE || diff.difficulty === null) {
+      return "NEUTRAL";
+    }
+    return fromEngineDifficulty(diff.difficulty);
   };
 
   const buildSaveText = () => {
@@ -122,7 +158,8 @@ export default function App() {
       "theme-hard",
       "theme-samurai",
       "theme-victory",
-      "theme-start"
+      "theme-start",
+      "theme-neutral"
     );
     if (isSolvedView) {
       document.body.classList.add("theme-victory");
@@ -144,6 +181,9 @@ export default function App() {
     if (difficulty === "SAMURAI") {
       document.body.classList.add("theme-samurai");
     }
+    if (difficulty === "NEUTRAL") {
+      document.body.classList.add("theme-neutral");
+    }
   }, [difficulty, isSolvedView, isStartView]);
 
   return (
@@ -153,6 +193,7 @@ export default function App() {
       {!isStartView && (
         <SudokuBoard
           ref={boardRef}
+          allowEditFixed={difficulty === "NEUTRAL"}
           loadedGrid={loadedGrid}
           newGameSignal={newGameSignal}
           solveSignal={solveSignal}
@@ -169,17 +210,7 @@ export default function App() {
           setShowNewGameModal(true);
         }}
         onLoad={() => fileInputRef.current?.click()}
-        onSave={() => {
-          const board = boardRef.current;
-          if (!board) {
-            return;
-          }
-          if (board.hasConflicts()) {
-            setShowConflictModal(true);
-            return;
-          }
-          setShowSaveModal(true);
-        }}
+        onSave={() => setShowSaveModal(true)}
         onSolve={() => {
           setSolveSignal((v) => v + 1);
           setIsSolvedView(true);
@@ -198,25 +229,21 @@ export default function App() {
           }
           const text = await file.text();
           const normalized = text.replace(/\s+/g, "");
+          const grid81 = new Uint8Array(81);
           const cells: Cell[] = Array.from({ length: 81 }, (_, i) => {
             const ch = normalized[i] ?? "";
             if (/^[1-9]$/.test(ch)) {
-              return { value: Number(ch), fixed: true };
+              const value = Number(ch);
+              grid81[i] = value;
+              return { value, fixed: true };
             }
+            grid81[i] = 0;
             return { value: null, fixed: false };
           });
           const grid: Cell[][] = Array.from({ length: 9 }, (_, r) =>
             cells.slice(r * 9, r * 9 + 9)
           );
-          const difficulties: Difficulty[] = [
-            "EASY",
-            "MEDIUM",
-            "HARD",
-            "SAMURAI"
-          ];
-          setDifficulty(
-            difficulties[Math.floor(Math.random() * difficulties.length)]
-          );
+          setDifficulty(evaluateDifficulty(grid81));
           setLoadedGrid(grid);
           setIsSolvedView(false);
           setIsStartView(false);
@@ -315,26 +342,6 @@ export default function App() {
                   onClick={() => setShowSaveModal(false)}
                 >
                   CANCEL
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-      {showConflictModal &&
-        createPortal(
-          <div
-            className="modal-overlay"
-            onClick={() => setShowConflictModal(false)}
-          >
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <h2>Fix the conflicting numbers before saving</h2>
-              <div className="modal-actions">
-                <button
-                  className="modal-ok"
-                  onClick={() => setShowConflictModal(false)}
-                >
-                  OK
                 </button>
               </div>
             </div>

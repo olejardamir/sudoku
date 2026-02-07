@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { SudokuCell } from "./SudokuCell";
 
-export type Difficulty = "EASY" | "MEDIUM" | "HARD" | "SAMURAI";
+export type Difficulty = "EASY" | "MEDIUM" | "HARD" | "SAMURAI" | "NEUTRAL";
 
 export type Cell = {
   value: number | null;
@@ -27,6 +27,7 @@ function randomGrid(): Cell[][] {
 }
 
 type BoardProps = {
+  allowEditFixed: boolean;
   loadedGrid: Cell[][] | null;
   newGameSignal: number;
   solveSignal: number;
@@ -38,7 +39,7 @@ export type SudokuBoardHandle = {
 };
 
 export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
-  ({ loadedGrid, newGameSignal, solveSignal }, ref) => {
+  ({ allowEditFixed, loadedGrid, newGameSignal, solveSignal }, ref) => {
   const [grid, setGrid] = useState<Cell[][]>(() => randomGrid());
   const [selectedBlock, setSelectedBlock] = useState<{
     row: number;
@@ -184,6 +185,7 @@ export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
                 Math.floor(c / 3) === selectedBlock.col
               }
               isInvalid={conflicts.has(`${r}-${c}`)}
+              allowEditFixed={allowEditFixed}
               onChange={(v) => updateCell(r, c, v)}
               onFocus={() =>
                 setSelectedBlock({

@@ -5,6 +5,7 @@ type Props = {
   cell: Cell;
   isInSelectedBlock: boolean;
   isInvalid: boolean;
+  allowEditFixed: boolean;
   onChange: (value: number | null) => void;
   onFocus: () => void;
 };
@@ -13,6 +14,7 @@ export const SudokuCell: React.FC<Props> = ({
   cell,
   isInSelectedBlock,
   isInvalid,
+  allowEditFixed,
   onChange,
   onFocus
 }) => {
@@ -22,7 +24,7 @@ export const SudokuCell: React.FC<Props> = ({
         isInSelectedBlock ? "block-highlight" : ""
       } ${isInvalid ? "invalid" : ""}`}
       value={cell.value ?? ""}
-      readOnly={cell.fixed}
+      readOnly={cell.fixed && !allowEditFixed}
       onFocus={onFocus}
       onChange={(e) => {
         const v = e.target.value;
