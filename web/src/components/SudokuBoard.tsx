@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState
+} from "react";
 import { SudokuCell } from "./SudokuCell";
 
 export type Difficulty = "EASY" | "MEDIUM" | "HARD" | "SAMURAI";
@@ -26,11 +32,13 @@ type BoardProps = {
   solveSignal: number;
 };
 
-export const SudokuBoard: React.FC<BoardProps> = ({
-  loadedGrid,
-  newGameSignal,
-  solveSignal
-}) => {
+export type SudokuBoardHandle = {
+  getGrid: () => Cell[][];
+  hasConflicts: () => boolean;
+};
+
+export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
+  ({ loadedGrid, newGameSignal, solveSignal }, ref) => {
   const [grid, setGrid] = useState<Cell[][]>(() => randomGrid());
   const [selectedBlock, setSelectedBlock] = useState<{
     row: number;
@@ -157,6 +165,11 @@ export const SudokuBoard: React.FC<BoardProps> = ({
 
   const conflicts = getConflicts();
 
+  useImperativeHandle(ref, () => ({
+    getGrid: () => grid,
+    hasConflicts: () => getConflicts().size > 0
+  }));
+
   return (
     <div className="sudoku-wrapper">
       <div className="grid" ref={gridRef}>
@@ -184,4 +197,4 @@ export const SudokuBoard: React.FC<BoardProps> = ({
       </div>
     </div>
   );
-};
+});

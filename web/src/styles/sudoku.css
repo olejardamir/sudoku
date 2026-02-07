@@ -221,6 +221,11 @@ input.cell:focus {
   color: #000000;
 }
 
+.modal-note {
+  margin: 0 0 20px;
+  color: #000000;
+}
+
 .modal .difficulty {
   justify-content: center;
   margin-bottom: 20px;

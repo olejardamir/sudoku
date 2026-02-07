@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SudokuBoard } from "./components/SudokuBoard";
+import type { SudokuBoardHandle } from "./components/SudokuBoard";
 import type { Cell, Difficulty } from "./components/SudokuBoard";
 import { Controls } from "./components/Controls";
 import "./styles/sudoku.css";
@@ -23,7 +24,62 @@ export default function App() {
   const [isSolvedView, setIsSolvedView] = useState(false);
   const [isStartView, setIsStartView] = useState(true);
   const [showNewGameModal, setShowNewGameModal] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const boardRef = useRef<SudokuBoardHandle | null>(null);
+
+  const buildSaveText = () => {
+    const board = boardRef.current;
+    if (!board) {
+      return null;
+    }
+    const grid = board.getGrid();
+    return grid
+      .map((row) =>
+        row
+          .map((cell) =>
+            cell.value && cell.value >= 1 && cell.value <= 9
+              ? String(cell.value)
+              : "."
+          )
+          .join("")
+      )
+      .join("\n");
+  };
+
+  const savePuzzle = async () => {
+    const text = buildSaveText();
+    if (text === null) {
+      return;
+    }
+    const fileName = "sudoku.txt";
+    // Prefer the native save file picker when available.
+    if ("showSaveFilePicker" in window) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const picker = (window as any).showSaveFilePicker;
+      const handle = await picker({
+        suggestedName: fileName,
+        types: [
+          {
+            description: "Text Files",
+            accept: { "text/plain": [".txt"] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      return;
+    }
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     localStorage.setItem("difficulty", difficulty);
@@ -84,6 +140,7 @@ export default function App() {
       )}
       {!isStartView && (
         <SudokuBoard
+          ref={boardRef}
           loadedGrid={loadedGrid}
           newGameSignal={newGameSignal}
           solveSignal={solveSignal}
@@ -100,6 +157,17 @@ export default function App() {
           setShowNewGameModal(true);
         }}
         onLoad={() => fileInputRef.current?.click()}
+        onSave={() => {
+          const board = boardRef.current;
+          if (!board) {
+            return;
+          }
+          if (board.hasConflicts()) {
+            setShowConflictModal(true);
+            return;
+          }
+          setShowSaveModal(true);
+        }}
         onSolve={() => {
           setSolveSignal((v) => v + 1);
           setIsSolvedView(true);
@@ -183,6 +251,59 @@ export default function App() {
                   onClick={() => setShowNewGameModal(false)}
                 >
                   CANCEL
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      {showSaveModal &&
+        createPortal(
+          <div
+            className="modal-overlay"
+            onClick={() => setShowSaveModal(false)}
+          >
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Save Puzzle</h2>
+              <p className="modal-note">
+                Difficulty will be relevant to the saved puzzle (not the chosen
+                difficulty).
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="modal-ok"
+                  onClick={async () => {
+                    await savePuzzle();
+                    setShowSaveModal(false);
+                  }}
+                >
+                  OK
+                </button>
+                <button
+                  className="modal-cancel"
+                  onClick={() => setShowSaveModal(false)}
+                >
+                  CANCEL
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      {showConflictModal &&
+        createPortal(
+          <div
+            className="modal-overlay"
+            onClick={() => setShowConflictModal(false)}
+          >
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Fix the conflicting numbers before saving</h2>
+              <div className="modal-actions">
+                <button
+                  className="modal-ok"
+                  onClick={() => setShowConflictModal(false)}
+                >
+                  OK
                 </button>
               </div>
             </div>
