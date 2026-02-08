@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { generateSudoku, Symmetry } from "../../../engine/generator/generator.ts";
+import { generateSudoku } from "../../../engine/generator/generator.ts";
+import type { Symmetry } from "../../../engine/generator/generator_utils.ts";
 import type { Cell, Difficulty } from "../types";
 import { toEngineDifficulty, fromEngineDifficulty } from "../engine/difficultyAdapter";
 import { evaluateDifficulty } from "../services/evaluateDifficulty";
@@ -54,12 +55,12 @@ export function useSudokuActions({
   );
 
   const confirmNewGame = useCallback(
-    (pendingDifficulty: Difficulty) => {
+    (pendingDifficulty: Difficulty, pendingSymmetry: Symmetry) => {
       try {
         skipNextAutoVictory();
         const result = generateSudoku(
           toEngineDifficulty(pendingDifficulty),
-          Symmetry.NONE,
+          pendingSymmetry,
           Date.now() >>> 0
         );
         const grid = puzzleToGrid(result.puzzle81);

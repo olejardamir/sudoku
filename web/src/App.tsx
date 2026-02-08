@@ -8,6 +8,7 @@ import { WelcomeModal } from "./features/sudoku/components/modals/WelcomeModal";
 import { useAutoVictory } from "./features/sudoku/hooks/useAutoVictory";
 import { useSudokuActions } from "./features/sudoku/hooks/useSudokuActions";
 import type { ActiveModal, ViewMode } from "./features/sudoku/hooks/useSudokuActions";
+import type { Symmetry } from "./engine/generator/generator_utils.ts";
 import { useBodyTheme } from "./shared/hooks/useBodyTheme";
 import { useAudioController } from "./shared/hooks/useAudioController";
 import { useLocalStorageState } from "./shared/hooks/useLocalStorageState";
@@ -16,6 +17,7 @@ export default function App() {
   const [difficulty, setDifficulty] = useLocalStorageState<Difficulty>("difficulty", "EASY");
   const [pendingDifficulty, setPendingDifficulty] =
     useState<Difficulty>(difficulty);
+  const [pendingSymmetry, setPendingSymmetry] = useState<Symmetry>("NONE");
   const [loadedGrid, setLoadedGrid] = useState<Cell[][] | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("start");
   const [activeModal, setActiveModal] = useState<ActiveModal>("welcome");
@@ -86,7 +88,10 @@ export default function App() {
       <Controls
         isStartView={isStartView}
         isSolvedView={isSolvedView}
-        onNewGame={() => newGame(difficulty)}
+        onNewGame={() => {
+          setPendingSymmetry("NONE");
+          newGame(difficulty);
+        }}
         onLoad={() => fileInputRef.current?.click()}
         onSave={() => setActiveModal("save")}
         onSolve={solve}
@@ -125,11 +130,14 @@ export default function App() {
         isOpen={activeModal === "newGame"}
         pendingDifficulty={pendingDifficulty}
         onChangeDifficulty={setPendingDifficulty}
-        onConfirm={() => confirmNewGame(pendingDifficulty)}
+        pendingSymmetry={pendingSymmetry}
+        onChangeSymmetry={setPendingSymmetry}
+        onConfirm={() => confirmNewGame(pendingDifficulty, pendingSymmetry)}
         onCancel={() => setActiveModal(null)}
       />
       <SaveModal
         isOpen={activeModal === "save"}
+        allowMetadata={difficulty !== "NEUTRAL"}
         onSaveWithMetadata={saveWithMetadata}
         onSaveAsIs={saveAsIs}
         onCancel={() => setActiveModal(null)}
