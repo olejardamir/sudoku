@@ -1,3 +1,7 @@
+# PLAY THE GAME
+[CLICK HERE](https://olejardamir.github.io/sudoku/)
+
+
 # Core Architecture
 
 The core of this project consists of two primary components:
