@@ -39,6 +39,18 @@ export default function App() {
     isComplete: false,
     hasConflicts: false
   });
+  const [isMusicOn, setIsMusicOn] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
+  const pauseTimerRef = useRef<number | null>(null);
+  const skipAutoVictoryRef = useRef(false);
+
+  const clearPauseTimer = () => {
+    if (pauseTimerRef.current !== null) {
+      window.clearTimeout(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
+  };
 
   const toEngineDifficulty = (d: Difficulty): EngineDifficulty => {
     switch (d) {
@@ -135,7 +147,8 @@ export default function App() {
       isStartView ||
       isSolvedView ||
       !gridStatus.isComplete ||
-      gridStatus.hasConflicts
+      gridStatus.hasConflicts ||
+      skipAutoVictoryRef.current
     ) {
       return;
     }
@@ -176,6 +189,97 @@ export default function App() {
     setIsSolvedView(true);
     setIsStartView(false);
   }, [gridStatus, isStartView, isSolvedView]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    const view = isSolvedView
+      ? "VICTORY"
+      : isStartView
+        ? "START"
+        : difficulty === "NEUTRAL"
+          ? "UNKNOWN"
+          : difficulty;
+    const sources: Record<string, string> = {
+      START: "/music/START.mp3",
+      UNKNOWN: "/music/START.mp3",
+      EASY: "/music/EASY.mp3",
+      MEDIUM: "/music/MEDIUM.mp3",
+      HARD: "/music/HARD.mp3",
+      SAMURAI: "/music/SAMURAI.mp3",
+      VICTORY: "/music/VICTORY.mp3"
+    };
+    const fallbacks: Record<string, string> = {
+      START:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/START.mp3",
+      UNKNOWN:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/START.mp3",
+      EASY:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/EASY.mp3",
+      MEDIUM:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/MEDIUM.mp3",
+      HARD:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/HARD.mp3",
+      SAMURAI:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/SAMURAI.mp3",
+      VICTORY:
+        "https://github.com/olejardamir/sudoku/raw/refs/heads/main/web/public/music/VICTORY.mp3"
+    };
+    const localSrc = sources[view];
+    const fallbackSrc = fallbacks[view];
+    audio.src = localSrc;
+    audio.dataset.fallback = fallbackSrc;
+    audio.dataset.triedFallback = "false";
+    audio.load();
+    clearPauseTimer();
+    if (isMusicOn) {
+      audio.play().catch(() => {});
+    }
+  }, [difficulty, isSolvedView, isStartView]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    if (isMusicOn) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+    if (!isMusicOn) {
+      clearPauseTimer();
+    }
+  }, [isMusicOn]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !isMusicOn) {
+      return;
+    }
+    const handleFirstInteraction = () => {
+      audio.play().catch(() => {});
+      window.removeEventListener("pointerdown", handleFirstInteraction);
+      window.removeEventListener("keydown", handleFirstInteraction);
+      window.removeEventListener("touchstart", handleFirstInteraction);
+      window.removeEventListener("mouseover", handleFirstInteraction);
+      window.removeEventListener("focusin", handleFirstInteraction);
+    };
+    window.addEventListener("pointerdown", handleFirstInteraction, { once: true });
+    window.addEventListener("keydown", handleFirstInteraction, { once: true });
+    window.addEventListener("touchstart", handleFirstInteraction, { once: true });
+    window.addEventListener("mouseover", handleFirstInteraction, { once: true });
+    window.addEventListener("focusin", handleFirstInteraction, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", handleFirstInteraction);
+      window.removeEventListener("keydown", handleFirstInteraction);
+      window.removeEventListener("touchstart", handleFirstInteraction);
+      window.removeEventListener("mouseover", handleFirstInteraction);
+      window.removeEventListener("focusin", handleFirstInteraction);
+    };
+  }, [isMusicOn, difficulty, isSolvedView, isStartView]);
 
   const getCurrentGrid = (): Cell[][] | null => {
     if (boardRef.current) {
@@ -343,9 +447,12 @@ export default function App() {
           allowEditFixed={difficulty === "NEUTRAL"}
           loadedGrid={loadedGrid}
           newGameSignal={newGameSignal}
-          onGridUpdate={(grid, hasConflicts, isComplete) =>
-            setGridStatus({ hasConflicts, isComplete })
-          }
+          onGridUpdate={(grid, hasConflicts, isComplete) => {
+            setGridStatus({ hasConflicts, isComplete });
+            if (!isComplete || hasConflicts) {
+              skipAutoVictoryRef.current = false;
+            }
+          }}
         />
       )}
       {!isSolvedView && !isStartView && (
@@ -370,7 +477,7 @@ export default function App() {
           setIsStartView(false);
         }}
       />
-      {!isStartView && (
+      <div className="toggle-row">
         <button
           className="bg-toggle"
           title="Toggle Background"
@@ -378,7 +485,42 @@ export default function App() {
         >
           {isBackgroundOn ? "Background: ON" : "Background: OFF"}
         </button>
-      )}
+        <button
+          className="music-toggle"
+          title="Toggle Music"
+          onClick={() => setIsMusicOn((v) => !v)}
+        >
+          {isMusicOn ? "Music: ON" : "Music: OFF"}
+        </button>
+      </div>
+      <audio
+        ref={audioRef}
+        onEnded={() => {
+          clearPauseTimer();
+          pauseTimerRef.current = window.setTimeout(() => {
+            const audio = audioRef.current;
+            if (!audio || !isMusicOn) {
+              return;
+            }
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+          }, 3 * 60 * 1000);
+        }}
+        onError={(e) => {
+          const audio = e.currentTarget;
+          const fallback = audio.dataset.fallback;
+          const tried = audio.dataset.triedFallback === "true";
+          if (!fallback || tried) {
+            return;
+          }
+          audio.dataset.triedFallback = "true";
+          audio.src = fallback;
+          audio.load();
+          if (isMusicOn) {
+            audio.play().catch(() => {});
+          }
+        }}
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -423,9 +565,11 @@ export default function App() {
               )
             : grid81;
           setDifficulty(evaluateDifficulty(evalGrid));
-          setLoadedGrid(grid);
+          setGridStatus({ isComplete: false, hasConflicts: false });
+          skipAutoVictoryRef.current = true;
           setIsSolvedView(false);
           setIsStartView(false);
+          setLoadedGrid(grid);
           e.target.value = "";
         }}
       />
@@ -456,6 +600,9 @@ export default function App() {
                   className="modal-ok"
                   onClick={() => {
                     try {
+                      setIsSolvedView(false);
+                      setGridStatus({ isComplete: false, hasConflicts: false });
+                      skipAutoVictoryRef.current = true;
                       const result = generateSudoku(
                         toEngineDifficulty(pendingDifficulty),
                         Symmetry.NONE,
@@ -473,7 +620,6 @@ export default function App() {
                       );
                       setLoadedGrid(grid);
                       setDifficulty(fromEngineDifficulty(result.difficulty));
-                      setIsSolvedView(false);
                       setIsStartView(false);
                       setShowNewGameModal(false);
                     } catch (err) {
@@ -531,6 +677,28 @@ export default function App() {
                   onClick={() => setShowSaveModal(false)}
                 >
                   CANCEL
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      {isStartView &&
+        showWelcomeModal &&
+        createPortal(
+          <div className="modal-overlay">
+            <div className="modal">
+              <h2>Welcome to Sudoku Master, version 1 by Damir Olejar</h2>
+              <div className="modal-actions">
+                <button
+                  className="modal-ok"
+                  onClick={() => {
+                    setShowWelcomeModal(false);
+                    setIsMusicOn(true);
+                    audioRef.current?.play().catch(() => {});
+                  }}
+                >
+                  OK
                 </button>
               </div>
             </div>
