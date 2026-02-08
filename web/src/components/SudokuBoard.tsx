@@ -1,4 +1,4 @@
-import React, {
+import {
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -63,7 +63,9 @@ export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(
     if (!loadedGrid) {
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setGrid(loadedGrid);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedBlock(null);
   }, [loadedGrid]);
 
