@@ -1,4 +1,4 @@
-import { Difficulty, SolveStatus } from "./solver_shared";
+import { Difficulty, SolveStatus } from "./solver_shared.ts";
 
 export type SolveStats = {
   conflicts: number;

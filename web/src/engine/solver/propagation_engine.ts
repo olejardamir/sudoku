@@ -1,7 +1,7 @@
-import { bitIndexLow, isSingle32, lowbit32 } from "./solver_shared";
-import { SolverMetrics } from "./solver_metrics";
-import { RuleSet } from "./solver_rules";
-import { SolverState } from "./solver_state";
+import { bitIndexLow, isSingle32, lowbit32 } from "./solver_shared.ts";
+import { SolverMetrics } from "./solver_metrics.ts";
+import { RuleSet } from "./solver_rules.ts";
+import { SolverState } from "./solver_state.ts";
 
 export const PropagationResult = {
   OK: 0,

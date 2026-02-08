@@ -7,12 +7,12 @@ import {
   u32,
   u32not,
   xorshift32,
-} from "./solver_shared";
-import { PropagationEngine, PropagationResult } from "./propagation_engine";
-import { SolverMetrics } from "./solver_metrics";
-import { RuleSet } from "./solver_rules";
-import { SolverState } from "./solver_state";
-import { TrailManager } from "./trail_manager";
+} from "./solver_shared.ts";
+import { PropagationEngine, PropagationResult } from "./propagation_engine.ts";
+import { SolverMetrics } from "./solver_metrics.ts";
+import { RuleSet } from "./solver_rules.ts";
+import { SolverState } from "./solver_state.ts";
+import { TrailManager } from "./trail_manager.ts";
 
 type U32 = number;
 

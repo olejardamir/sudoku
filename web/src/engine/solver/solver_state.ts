@@ -12,9 +12,9 @@ import {
   u32,
   u32not,
   wordCellOffset,
-} from "./solver_shared";
-import type { Masks } from "./solver_shared";
-import { TrailManager } from "./trail_manager";
+} from "./solver_shared.ts";
+import type { Masks } from "./solver_shared.ts";
+import { TrailManager } from "./trail_manager.ts";
 
 export class SolverState {
   public readonly UNIT_MASK: Uint32Array;

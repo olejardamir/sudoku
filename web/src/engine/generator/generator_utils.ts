@@ -1,6 +1,6 @@
 /* ------------------ SYMMETRY + HELPERS ------------------ */
 
-import { SudokuSolver, SolveStatus } from "./solver";
+import { SudokuSolver, SolveStatus } from "../solver/solver.ts";
 
 export const Symmetry = {
   NONE: "NONE",

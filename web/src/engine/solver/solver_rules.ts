@@ -7,9 +7,9 @@ import {
   popcount32,
   u32,
   u32not,
-} from "./solver_shared";
-import { SolverMetrics } from "./solver_metrics";
-import { SolverState } from "./solver_state";
+} from "./solver_shared.ts";
+import { SolverMetrics } from "./solver_metrics.ts";
+import { SolverState } from "./solver_state.ts";
 
 type U32 = number;
 

@@ -4,13 +4,13 @@ import { SudokuBoard } from "./components/SudokuBoard";
 import type { SudokuBoardHandle } from "./components/SudokuBoard";
 import type { Cell, Difficulty } from "./components/SudokuBoard";
 import { Controls } from "./components/Controls";
-import { generateSudoku, Symmetry } from "./engine/generator";
+import { generateSudoku, Symmetry } from "./engine/generator/generator.ts";
 import {
   Difficulty as EngineDifficulty,
   SolveStatus,
   SudokuSolver,
   generateMasks
-} from "./engine/solver";
+} from "./engine/solver/solver.ts";
 import "./styles/sudoku.css";
 import "./styles/easy.css";
 import "./styles/medium.css";

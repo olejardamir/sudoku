@@ -11,13 +11,13 @@ import {
   generateMasks,
   SolveStatus,
   type Masks,
-} from "./solver_shared";
-import { PropagationEngine } from "./propagation_engine";
-import { RuleSet } from "./solver_rules";
-import { SearchEngine } from "./search_engine";
-import { SolverMetrics, type SolveResult, type SolveStats } from "./solver_metrics";
-import { SolverState } from "./solver_state";
-import { TrailManager } from "./trail_manager";
+} from "./solver_shared.ts";
+import { PropagationEngine } from "./propagation_engine.ts";
+import { RuleSet } from "./solver_rules.ts";
+import { SearchEngine } from "./search_engine.ts";
+import { SolverMetrics, type SolveResult, type SolveStats } from "./solver_metrics.ts";
+import { SolverState } from "./solver_state.ts";
+import { TrailManager } from "./trail_manager.ts";
 
 export { CELLS, WORDS, UNITS, SolveStatus, Difficulty, generateMasks };
 export type { Masks, SolveResult, SolveStats };
