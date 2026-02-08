@@ -2,13 +2,7 @@
    SUDOKU GENERATOR — ENGINE (V4.1 SOLVER-SYNC)
    ======================================================== */
 
-import {
-  SudokuSolver,
-  generateMasks,
-  Difficulty,
-  SolveStatus
-} from "./solver";
-import type { SolveResult } from "./solver";
+import { SudokuSolver, generateMasks, Difficulty, SolveStatus } from "./solver";
 
 /* ------------------ CONSTANTS ------------------ */
 
@@ -46,12 +40,14 @@ const ALLOW_BEST_SO_FAR_FALLBACK = true;
 
 /* ------------------ TYPES ------------------ */
 
-export enum Symmetry {
-  NONE = "NONE",
-  ROT180 = "ROT180",
-  ROT90 = "ROT90",
-  MIRROR_XY = "MIRROR_XY",
-}
+export const Symmetry = {
+  NONE: "NONE",
+  ROT180: "ROT180",
+  ROT90: "ROT90",
+  MIRROR_XY: "MIRROR_XY"
+} as const;
+
+export type Symmetry = (typeof Symmetry)[keyof typeof Symmetry];
 
 export interface GeneratedPuzzle {
   puzzle81: Uint8Array;
@@ -83,15 +79,12 @@ function difficultyRank(d: Difficulty): number {
 }
 
 function acceptsDifficulty(target: Difficulty, diff: Difficulty): boolean {
-  if (diff === target) return true;
-  if (
-    target === Difficulty.HARD &&
-    diff === Difficulty.SAMURAI &&
-    ALLOW_HARD_TO_ACCEPT_SAMURAI
-  ) {
-    return true;
-  }
-  return false;
+  return (
+    diff === target ||
+    (target === Difficulty.HARD &&
+      diff === Difficulty.SAMURAI &&
+      ALLOW_HARD_TO_ACCEPT_SAMURAI)
+  );
 }
 
 function scoreToTarget(

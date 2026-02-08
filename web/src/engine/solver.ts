@@ -17,7 +17,6 @@
 export const CELLS = 81;
 export const WORDS = 3;
 export const UNITS = 27;
-export const DIGITS = 9;
 
 const MAX_DEPTH = 81;
 const MAX_TRAIL = 200000;
@@ -33,20 +32,24 @@ const ALL_WORD_MASK2 = 0x0001FFFF >>> 0;
 
 const ALL_UNITS_DIRTY = 0x07FFFFFF >>> 0; // 27 ones
 
-export enum SolveStatus {
-  NO_SOLUTION,
-  UNIQUE,
-  MULTIPLE,
-  NODE_LIMIT,
-  TIMEOUT
-}
+export const SolveStatus = {
+  NO_SOLUTION: 0,
+  UNIQUE: 1,
+  MULTIPLE: 2,
+  NODE_LIMIT: 3,
+  TIMEOUT: 4
+} as const;
 
-export enum Difficulty {
-  EASY,
-  MEDIUM,
-  HARD,
-  SAMURAI
-}
+export type SolveStatus = (typeof SolveStatus)[keyof typeof SolveStatus];
+
+export const Difficulty = {
+  EASY: 0,
+  MEDIUM: 1,
+  HARD: 2,
+  SAMURAI: 3
+} as const;
+
+export type Difficulty = (typeof Difficulty)[keyof typeof Difficulty];
 
 export type SolveStats = {
   conflicts: number;
@@ -182,7 +185,7 @@ export function generateMasks(): Masks {
     const r = (cell / 9) | 0;
     const c = cell % 9;
     const b = (((r / 3) | 0) * 3) + ((c / 3) | 0);
-    CELL_TO_UNITS[cell * 3 + 0] = r;
+    CELL_TO_UNITS[cell * 3] = r;
     CELL_TO_UNITS[cell * 3 + 1] = 9 + c;
     CELL_TO_UNITS[cell * 3 + 2] = 18 + b;
   }
@@ -227,6 +230,7 @@ export function generateMasks(): Masks {
 /* ================================================================
    SOLVER CLASS
    ================================================================ */
+// noinspection JSUnusedGlobalSymbols
 export class SudokuSolver {
   // ---- static masks ----
   private readonly UNIT_MASK: Uint32Array;
@@ -397,21 +401,21 @@ export class SudokuSolver {
   }
 
   public enableRandomMRVTieBreak(on: boolean): void {
-    this.randomMRVTieBreak = !!on;
+    this.randomMRVTieBreak = on;
   }
 
   public enableRandomValueChoice(on: boolean): void {
-    this.randomValueChoice = !!on;
+    this.randomValueChoice = on;
   }
 
   public enableHeavyRules(on: boolean): void {
-    this.heavyEnabled = !!on;
+    this.heavyEnabled = on;
   }
 
   public setHeavySchedule(atRootOnly: boolean, depthLimit: number, dirtyUnitsOnly: boolean): void {
-    this.heavyAtRootOnly = !!atRootOnly;
+    this.heavyAtRootOnly = atRootOnly;
     this.heavyDepthLimit = (depthLimit | 0);
-    this.heavyDirtyUnitsOnly = !!dirtyUnitsOnly;
+    this.heavyDirtyUnitsOnly = dirtyUnitsOnly;
   }
 
   /* ============================================================
@@ -468,7 +472,7 @@ export class SudokuSolver {
      DIRTY UNITS
      ============================================================ */
   private markDirtyUnitsForCell(cell: number): void {
-    const u0 = this.CELL_TO_UNITS[cell * 3 + 0];
+    const u0 = this.CELL_TO_UNITS[cell * 3];
     const u1 = this.CELL_TO_UNITS[cell * 3 + 1];
     const u2 = this.CELL_TO_UNITS[cell * 3 + 2];
     const mask = u32((1 << u0) | (1 << u1) | (1 << u2));
@@ -586,7 +590,7 @@ export class SudokuSolver {
 
     // initialize digit planes to “all cells allowed”
     for (let d = 0; d < 9; d++) {
-      this.DIGIT_PLANE[(d * 3 + 0) | 0] = u32(ALL_WORD_MASK0);
+      this.DIGIT_PLANE[(d * 3) | 0] = u32(ALL_WORD_MASK0);
       this.DIGIT_PLANE[(d * 3 + 1) | 0] = u32(ALL_WORD_MASK1);
       this.DIGIT_PLANE[(d * 3 + 2) | 0] = u32(ALL_WORD_MASK2);
     }
@@ -730,16 +734,16 @@ export class SudokuSolver {
       const br = ((box / 3) | 0);
       const bc = (box % 3);
 
-      const rowU0 = br * 3 + 0;
+      const rowU0 = br * 3;
       const rowU1 = br * 3 + 1;
       const rowU2 = br * 3 + 2;
 
-      const colU0 = 9 + (bc * 3 + 0);
+      const colU0 = 9 + (bc * 3);
       const colU1 = 9 + (bc * 3 + 1);
       const colU2 = 9 + (bc * 3 + 2);
 
       for (let d = 0; d < 9; d++) {
-        const b0 = u32(this.DIGIT_PLANE[(d * 3 + 0) | 0] & this.UNIT_MASK[baseBox + 0]);
+        const b0 = u32(this.DIGIT_PLANE[(d * 3) | 0] & this.UNIT_MASK[baseBox]);
         const b1 = u32(this.DIGIT_PLANE[(d * 3 + 1) | 0] & this.UNIT_MASK[baseBox + 1]);
         const b2 = u32(this.DIGIT_PLANE[(d * 3 + 2) | 0] & this.UNIT_MASK[baseBox + 2]);
 
@@ -751,17 +755,17 @@ export class SudokuSolver {
           const rU = rowUs[i];
           const baseRow = rU * 3;
 
-          const outsideRow0 = u32(b0 & u32not(this.UNIT_MASK[baseRow + 0]));
+          const outsideRow0 = u32(b0 & u32not(this.UNIT_MASK[baseRow]));
           const outsideRow1 = u32(b1 & u32not(this.UNIT_MASK[baseRow + 1]));
           const outsideRow2 = u32(b2 & u32not(this.UNIT_MASK[baseRow + 2]));
 
           // all candidates in this box lie within this row => remove from row outside the box
           if (outsideRow0 === 0 && outsideRow1 === 0 && outsideRow2 === 0) {
-            let out0 = u32(this.UNIT_MASK[baseRow + 0] & u32not(this.UNIT_MASK[baseBox + 0])) & ALL_WORD_MASK0;
+            let out0 = u32(this.UNIT_MASK[baseRow] & u32not(this.UNIT_MASK[baseBox])) & ALL_WORD_MASK0;
             let out1 = u32(this.UNIT_MASK[baseRow + 1] & u32not(this.UNIT_MASK[baseBox + 1])) & ALL_WORD_MASK1;
             let out2 = u32(this.UNIT_MASK[baseRow + 2] & u32not(this.UNIT_MASK[baseBox + 2])) & ALL_WORD_MASK2;
 
-            out0 = u32(out0 & this.DIGIT_PLANE[(d * 3 + 0) | 0]);
+            out0 = u32(out0 & this.DIGIT_PLANE[(d * 3) | 0]);
             out1 = u32(out1 & this.DIGIT_PLANE[(d * 3 + 1) | 0]);
             out2 = u32(out2 & this.DIGIT_PLANE[(d * 3 + 2) | 0]);
 
@@ -787,16 +791,16 @@ export class SudokuSolver {
           const cU = colUs[i];
           const baseCol = cU * 3;
 
-          const outsideCol0 = u32(b0 & u32not(this.UNIT_MASK[baseCol + 0]));
+          const outsideCol0 = u32(b0 & u32not(this.UNIT_MASK[baseCol]));
           const outsideCol1 = u32(b1 & u32not(this.UNIT_MASK[baseCol + 1]));
           const outsideCol2 = u32(b2 & u32not(this.UNIT_MASK[baseCol + 2]));
 
           if (outsideCol0 === 0 && outsideCol1 === 0 && outsideCol2 === 0) {
-            let out0 = u32(this.UNIT_MASK[baseCol + 0] & u32not(this.UNIT_MASK[baseBox + 0])) & ALL_WORD_MASK0;
+            let out0 = u32(this.UNIT_MASK[baseCol] & u32not(this.UNIT_MASK[baseBox])) & ALL_WORD_MASK0;
             let out1 = u32(this.UNIT_MASK[baseCol + 1] & u32not(this.UNIT_MASK[baseBox + 1])) & ALL_WORD_MASK1;
             let out2 = u32(this.UNIT_MASK[baseCol + 2] & u32not(this.UNIT_MASK[baseBox + 2])) & ALL_WORD_MASK2;
 
-            out0 = u32(out0 & this.DIGIT_PLANE[(d * 3 + 0) | 0]);
+            out0 = u32(out0 & this.DIGIT_PLANE[(d * 3) | 0]);
             out1 = u32(out1 & this.DIGIT_PLANE[(d * 3 + 1) | 0]);
             out2 = u32(out2 & this.DIGIT_PLANE[(d * 3 + 2) | 0]);
 
@@ -831,10 +835,13 @@ export class SudokuSolver {
       const baseU = u * 3;
 
       for (let d = 0; d < 9; d++) {
-        this.hpCand0[d] = u32(this.DIGIT_PLANE[(d * 3 + 0) | 0] & this.UNIT_MASK[baseU + 0]);
+        this.hpCand0[d] = u32(this.DIGIT_PLANE[(d * 3) | 0] & this.UNIT_MASK[baseU]);
         this.hpCand1[d] = u32(this.DIGIT_PLANE[(d * 3 + 1) | 0] & this.UNIT_MASK[baseU + 1]);
         this.hpCand2[d] = u32(this.DIGIT_PLANE[(d * 3 + 2) | 0] & this.UNIT_MASK[baseU + 2]);
-        this.hpCnt[d] = (popcount32(this.hpCand0[d]) + popcount32(this.hpCand1[d]) + popcount32(this.hpCand2[d])) as any;
+        this.hpCnt[d] =
+          (popcount32(this.hpCand0[d]) +
+            popcount32(this.hpCand1[d]) +
+            popcount32(this.hpCand2[d])) & 0xff;
       }
 
       for (let d1 = 0; d1 < 9; d1++) {
@@ -913,7 +920,7 @@ export class SudokuSolver {
         const baseU = u * 3;
 
         for (let d = 0; d < 9; d++) {
-          const m0 = u32(this.DIGIT_PLANE[(d * 3 + 0) | 0] & this.UNIT_MASK[baseU + 0]);
+          const m0 = u32(this.DIGIT_PLANE[(d * 3) | 0] & this.UNIT_MASK[baseU]);
           const m1 = u32(this.DIGIT_PLANE[(d * 3 + 1) | 0] & this.UNIT_MASK[baseU + 1]);
           const m2 = u32(this.DIGIT_PLANE[(d * 3 + 2) | 0] & this.UNIT_MASK[baseU + 2]);
 
