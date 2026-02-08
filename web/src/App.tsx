@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SudokuBoard } from "./components/SudokuBoard";
 import type { SudokuBoardHandle } from "./components/SudokuBoard";
@@ -26,7 +26,6 @@ export default function App() {
   });
   const [pendingDifficulty, setPendingDifficulty] =
     useState<Difficulty>(difficulty);
-  const [newGameSignal, setNewGameSignal] = useState(0);
   const [loadedGrid, setLoadedGrid] = useState<Cell[][] | null>(null);
   const [isSolvedView, setIsSolvedView] = useState(false);
   const [isStartView, setIsStartView] = useState(true);
@@ -35,10 +34,6 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const boardRef = useRef<SudokuBoardHandle | null>(null);
   const [isBackgroundOn, setIsBackgroundOn] = useState(true);
-  const [gridStatus, setGridStatus] = useState({
-    isComplete: false,
-    hasConflicts: false
-  });
   const [isMusicOn, setIsMusicOn] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [showWelcomeModal, setShowWelcomeModal] = useState(true);
@@ -142,21 +137,22 @@ export default function App() {
     );
   };
 
-  useEffect(() => {
-    if (
-      isStartView ||
-      isSolvedView ||
-      !gridStatus.isComplete ||
-      gridStatus.hasConflicts ||
-      skipAutoVictoryRef.current
-    ) {
+  const checkAutoVictory = (
+    grid: Cell[][],
+    hasConflicts: boolean,
+    isComplete: boolean
+  ) => {
+    if (isStartView || isSolvedView) {
       return;
     }
-    const board = boardRef.current;
-    if (!board) {
+    if (!isComplete || hasConflicts) {
+      skipAutoVictoryRef.current = false;
       return;
     }
-    const grid = board.getGrid();
+    if (skipAutoVictoryRef.current) {
+      skipAutoVictoryRef.current = false;
+      return;
+    }
     const grid81 = new Uint8Array(81);
     for (let r = 0; r < 9; r += 1) {
       for (let c = 0; c < 9; c += 1) {
@@ -170,15 +166,16 @@ export default function App() {
       return;
     }
     const res = solver.solveStopAtOne();
-    if (!res.solution81) {
+    const solution = res.solution81;
+    if (!solution) {
       return;
     }
     for (let i = 0; i < 81; i += 1) {
-      if (grid81[i] !== res.solution81[i]) {
+      if (grid81[i] !== solution[i]) {
         return;
       }
     }
-    const cells: Cell[] = Array.from(res.solution81, (v) => ({
+    const cells: Cell[] = Array.from(solution, (v) => ({
       value: v > 0 ? v : null,
       fixed: true
     }));
@@ -188,7 +185,7 @@ export default function App() {
     setLoadedGrid(solvedGrid);
     setIsSolvedView(true);
     setIsStartView(false);
-  }, [gridStatus, isStartView, isSolvedView]);
+  };
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -237,7 +234,7 @@ export default function App() {
     if (isMusicOn) {
       audio.play().catch(() => {});
     }
-  }, [difficulty, isSolvedView, isStartView]);
+  }, [difficulty, isSolvedView, isStartView, isMusicOn]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -301,40 +298,6 @@ export default function App() {
               ? String(cell.value)
               : "."
           )
-          .join("")
-      )
-      .join("\n");
-  };
-
-  const buildWinningSaveText = () => {
-    const grid = getCurrentGrid();
-    if (!grid) {
-      return null;
-    }
-    const grid81 = new Uint8Array(81);
-    for (let r = 0; r < 9; r += 1) {
-      for (let c = 0; c < 9; c += 1) {
-        const cell = grid[r][c];
-        const i = r * 9 + c;
-        grid81[i] = cell.fixed && cell.value ? cell.value : 0;
-      }
-    }
-    const solver = createDeterministicSolver();
-    if (!solver.loadGrid81(grid81)) {
-      return null;
-    }
-    const res = solver.solveStopAtOne();
-    if (!res.solution81) {
-      return null;
-    }
-    return grid
-      .map((row, r) =>
-        row
-          .map((cell, c) => {
-            const i = r * 9 + c;
-            const solved = res.solution81[i];
-            return cell.value === solved ? String(solved) : ".";
-          })
           .join("")
       )
       .join("\n");
@@ -446,12 +409,11 @@ export default function App() {
           ref={boardRef}
           allowEditFixed={difficulty === "NEUTRAL"}
           loadedGrid={loadedGrid}
-          newGameSignal={newGameSignal}
           onGridUpdate={(grid, hasConflicts, isComplete) => {
-            setGridStatus({ hasConflicts, isComplete });
             if (!isComplete || hasConflicts) {
               skipAutoVictoryRef.current = false;
             }
+            checkAutoVictory(grid, hasConflicts, isComplete);
           }}
         />
       )}
@@ -565,7 +527,6 @@ export default function App() {
               )
             : grid81;
           setDifficulty(evaluateDifficulty(evalGrid));
-          setGridStatus({ isComplete: false, hasConflicts: false });
           skipAutoVictoryRef.current = true;
           setIsSolvedView(false);
           setIsStartView(false);
@@ -601,7 +562,6 @@ export default function App() {
                   onClick={() => {
                     try {
                       setIsSolvedView(false);
-                      setGridStatus({ isComplete: false, hasConflicts: false });
                       skipAutoVictoryRef.current = true;
                       const result = generateSudoku(
                         toEngineDifficulty(pendingDifficulty),
