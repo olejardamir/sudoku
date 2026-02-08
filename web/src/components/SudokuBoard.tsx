@@ -6,13 +6,7 @@ import {
   useState
 } from "react";
 import { SudokuCell } from "./SudokuCell";
-
-export type Difficulty = "EASY" | "MEDIUM" | "HARD" | "SAMURAI" | "NEUTRAL";
-
-export type Cell = {
-  value: number | null;
-  fixed: boolean;
-};
+import type { Cell, SudokuBoardHandle } from "../features/sudoku/types";
 
 function randomGrid(): Cell[][] {
   return Array.from({ length: 9 }, () =>
@@ -30,11 +24,6 @@ type BoardProps = {
   allowEditFixed: boolean;
   loadedGrid: Cell[][] | null;
   onGridUpdate: (grid: Cell[][], hasConflicts: boolean, isComplete: boolean) => void;
-};
-
-export type SudokuBoardHandle = {
-  getGrid: () => Cell[][];
-  hasConflicts: () => boolean;
 };
 
 export const SudokuBoard = forwardRef<SudokuBoardHandle, BoardProps>(

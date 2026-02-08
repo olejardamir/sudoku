@@ -1,5 +1,5 @@
 import React from "react";
-import type { Cell } from "./SudokuBoard";
+import type { Cell } from "../features/sudoku/types";
 
 type Props = {
   cell: Cell;
