@@ -133,7 +133,12 @@ I built a complete UI in React. While the spec asked for "simple," I spent extra
 ### 5. Deployment Instructions
 Write instructions on how to deploy the application to AWS using GitHub Action or other CI/CD tools or scripts.
 
-## Personal Computers Only (same logic applies on AWS instances).
+
+## AWS using GitHub Action
+PDF is located here: https://github.com/olejardamir/sudoku/tree/main/documents
+Please note, should PDF be cut-off (at the end it should say "CONGRATULATIONS! You are is now fully automated with AWS and Github CI/CD pipeline.") please contact me for a full version.
+
+## Personal Computers Only
 
 ### LINUX
 
